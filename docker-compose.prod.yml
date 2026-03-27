@@ -1,0 +1,40 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.prod
+    environment:
+      RUN_AS_ROOT: "true"
+      RUN_MIGRATIONS: "true"
+      RUN_COLLECTSTATIC: "true"
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - media_data:/app/media
+      # Required if you want build validation and preview to keep using the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.prod
+    environment:
+      C_FORCE_ROOT: "1"
+      RUN_AS_ROOT: "true"
+      RUN_MIGRATIONS: "false"
+      RUN_COLLECTSTATIC: "false"
+    command: celery -A config worker -l info
+    restart: unless-stopped
+    volumes:
+      - media_data:/app/media
+      # Required if you want preview/build jobs from the worker.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  media_data:

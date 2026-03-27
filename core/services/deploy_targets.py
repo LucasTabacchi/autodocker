@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+from core.services.contracts import DetectionResult, GeneratedArtifactSpec
+
+
+@dataclass(slots=True)
+class DeployReport:
+    summary: str
+    targets: list[str]
+    generated_paths: list[str]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+class DeployTargetArtifactService:
+    def generate(self, detection: DetectionResult, profile: str) -> tuple[list[GeneratedArtifactSpec], DeployReport]:
+        render_path = "render.yaml"
+        k8s_path = "deploy/kubernetes/app.yaml"
+        artifacts = [
+            GeneratedArtifactSpec(
+                kind="deploy",
+                path=render_path,
+                description="Blueprint base para desplegar el proyecto como servicio web.",
+                content=self._render_blueprint(detection, profile),
+            ),
+            GeneratedArtifactSpec(
+                kind="deploy",
+                path=k8s_path,
+                description="Manifiesto base de Deployment + Service para Kubernetes.",
+                content=self._kubernetes_manifest(detection, profile),
+            ),
+        ]
+        report = DeployReport(
+            summary="Targets de deploy generados para PaaS y Kubernetes.",
+            targets=["render", "kubernetes"],
+            generated_paths=[render_path, k8s_path],
+        )
+        return artifacts, report
+
+    def _render_blueprint(self, detection: DetectionResult, profile: str) -> str:
+        component = detection.primary_component()
+        port = component.probable_ports[0] if component and component.probable_ports else 8000
+        start_command = component.start_command if component else ""
+        return "\n".join(
+            [
+                "services:",
+                "  - type: web",
+                f"    name: {detection.project_name.lower().replace(' ', '-')}",
+                "    runtime: docker",
+                f"    dockerContext: {component.path if component and component.path != '.' else '.'}",
+                "    dockerfilePath: ./Dockerfile" if not component or component.path == "." else f"    dockerfilePath: ./{component.path}/Dockerfile",
+                "    plan: starter",
+                "    autoDeploy: true",
+                f"    envVars:",
+                f"      - key: AUTODOCKER_PROFILE",
+                f"        value: {profile}",
+                "      - key: PORT",
+                f"        value: \"{port}\"",
+                "    healthCheckPath: /",
+                f"    startCommand: {start_command or 'ajustar-comando-de-arranque'}",
+            ]
+        )
+
+    def _kubernetes_manifest(self, detection: DetectionResult, profile: str) -> str:
+        component = detection.primary_component()
+        app_name = detection.project_name.lower().replace(" ", "-")
+        port = component.probable_ports[0] if component and component.probable_ports else 8000
+        return "\n".join(
+            [
+                "apiVersion: apps/v1",
+                "kind: Deployment",
+                "metadata:",
+                f"  name: {app_name}",
+                "spec:",
+                "  replicas: 1",
+                "  selector:",
+                "    matchLabels:",
+                f"      app: {app_name}",
+                "  template:",
+                "    metadata:",
+                "      labels:",
+                f"        app: {app_name}",
+                "    spec:",
+                "      containers:",
+                "        - name: app",
+                "          image: your-registry/replace-me:latest",
+                "          ports:",
+                f"            - containerPort: {port}",
+                "          env:",
+                "            - name: AUTODOCKER_PROFILE",
+                f"              value: {profile}",
+                "          readinessProbe:",
+                "            httpGet:",
+                "              path: /",
+                f"              port: {port}",
+                "            initialDelaySeconds: 10",
+                "            periodSeconds: 15",
+                "---",
+                "apiVersion: v1",
+                "kind: Service",
+                "metadata:",
+                f"  name: {app_name}",
+                "spec:",
+                "  selector:",
+                f"    app: {app_name}",
+                "  ports:",
+                f"    - port: {port}",
+                f"      targetPort: {port}",
+                "  type: ClusterIP",
+            ]
+        )

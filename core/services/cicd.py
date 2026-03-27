@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+from core.services.contracts import DetectionResult, GeneratedArtifactSpec
+
+
+@dataclass(slots=True)
+class CicdReport:
+    provider: str
+    summary: str
+    generated_paths: list[str]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+class CicdArtifactService:
+    def generate(self, detection: DetectionResult, profile: str) -> tuple[list[GeneratedArtifactSpec], CicdReport]:
+        workflow_path = ".github/workflows/autodocker-ci.yml"
+        workflow = self._github_actions_workflow(detection, profile)
+        artifacts = [
+            GeneratedArtifactSpec(
+                kind="pipeline",
+                path=workflow_path,
+                description="Pipeline base para build, validación y publicación de imagen.",
+                content=workflow,
+            )
+        ]
+        report = CicdReport(
+            provider="github-actions",
+            summary="Pipeline generado para build, smoke validation y publish opcional de imagen.",
+            generated_paths=[workflow_path],
+        )
+        return artifacts, report
+
+    def _github_actions_workflow(self, detection: DetectionResult, profile: str) -> str:
+        use_compose = len(detection.components) > 1 or bool(detection.shared_services)
+        build_step = (
+            "docker compose -f docker-compose.yml build"
+            if use_compose
+            else "docker build -t autodocker-ci ."
+        )
+        validate_step = (
+            "docker compose -f docker-compose.yml config"
+            if use_compose
+            else "docker run --rm autodocker-ci sh -lc 'echo smoke check'"
+        )
+        return "\n".join(
+            [
+                "name: AutoDocker CI",
+                "",
+                "on:",
+                "  push:",
+                "    branches: [main]",
+                "  pull_request:",
+                "",
+                "jobs:",
+                "  docker:",
+                "    runs-on: ubuntu-latest",
+                "    env:",
+                f"      AUTODOCKER_PROFILE: {profile}",
+                "    steps:",
+                "      - name: Checkout",
+                "        uses: actions/checkout@v4",
+                "      - name: Set up Docker Buildx",
+                "        uses: docker/setup-buildx-action@v3",
+                "      - name: Build generated container assets",
+                f"        run: {build_step}",
+                "      - name: Validate runtime configuration",
+                f"        run: {validate_step}",
+                "      - name: Publish image placeholder",
+                "        if: github.ref == 'refs/heads/main'",
+                "        run: echo 'Configurar registry y push de imágenes en este paso.'",
+            ]
+        )
