@@ -142,6 +142,15 @@ docker compose exec web python manage.py createsuperuser
 - producción / `docker-compose.prod.yml`: copiá `.env.prod.example` a `.env.prod`
 - no uses `.env.prod` ni `.env.docker` como templates versionados; son archivos locales con secretos
 
+| Si hacés esto | Archivo a usar |
+| --- | --- |
+| Correr Django local con `manage.py runserver` | `.env` |
+| Reconstruir el entorno local base | `.env.example` |
+| Levantar el stack con `docker compose` | `.env.docker` |
+| Crear el `.env.docker` inicial | `.env.docker.example` |
+| Configurar producción / Supabase / `docker-compose.prod.yml` | `.env.prod` |
+| Crear el `.env.prod` inicial | `.env.prod.example` |
+
 ## Roadmap por fases
 ### Fase 1
 - MVP funcional local.
@@ -208,3 +217,33 @@ docker compose exec web python manage.py createsuperuser
 - El plan `free` evita el requisito de tarjeta en el deploy del web service.
 - Supabase Storage free tiene límites; sirve bien para demo y testing, pero no para cargas grandes o muchos ZIPs.
 - Si querés pasar luego a `web + worker`, primero tenés que sacar los uploads de disco local y moverlos a storage compartido externo.
+
+## Ruta recomendada para runtime real
+Si querés habilitar validación real y más adelante previews públicos sin salir del esquema `Render web + Supabase`, la evolución recomendada es separar el runtime pesado en un worker externo.
+
+### Arquitectura objetivo
+- Render: web/UI/API pública.
+- Supabase: PostgreSQL + Storage privado para los ZIPs.
+- Redis externo: broker/result backend para Celery.
+- Worker externo con Docker: ejecuta validaciones reales y, después, previews.
+- Tunnel/proxy público: solo necesario para la fase de previews.
+
+### Fase 1: validación real
+- Mover el web desde `AUTODOCKER_ASYNC_MODE=thread` a `AUTODOCKER_ASYNC_MODE=celery`.
+- Conectar web y worker al mismo `CELERY_BROKER_URL` y `CELERY_RESULT_BACKEND`.
+- Correr un `celery worker` dedicado fuera de Render, en una máquina con Docker disponible.
+- Mantener los previews deshabilitados mientras se habilita solo la validación real.
+- Resultado esperado: el botón de validate deja de depender del host local o del web process.
+
+### Fase 2: previews públicos
+- Mantener el worker externo con Docker como executor de previews.
+- Agregar un proxy local delante de los contenedores preview.
+- Publicarlo con un tunnel/proxy público, por ejemplo Cloudflare Tunnel.
+- Adaptar `PreviewService` para devolver URLs públicas reales en lugar de `127.0.0.1:<puerto>`.
+- Agregar cleanup de contenedores, rutas y expiración de previews.
+
+### Recomendación operativa
+- No mezclar validación real y preview público en el mismo cambio.
+- Resolver primero Redis + worker + validación.
+- Después agregar el split de flags para validación y preview.
+- Recién al final sumar proxy/tunnel y URLs públicas para previews.
