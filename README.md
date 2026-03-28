@@ -195,6 +195,7 @@ docker compose exec web python manage.py createsuperuser
    - `SUPABASE_STORAGE_ACCESS_KEY_ID`
    - `SUPABASE_STORAGE_SECRET_ACCESS_KEY`
 7. Confirmar el Blueprint y esperar el primer deploy.
+8. En plan `free`, las migraciones corren durante `buildCommand` porque Render no soporta `preDeployCommand` en ese tier.
 
 ### Notas de costo y límites
 - El plan `free` evita el requisito de tarjeta en el deploy del web service.

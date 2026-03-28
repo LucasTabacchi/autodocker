@@ -5,8 +5,7 @@ services:
     plan: free
     region: virginia
     numInstances: 1
-    buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python manage.py collectstatic --noinput
-    preDeployCommand: python manage.py migrate --noinput
+    buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate --noinput
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-1} --timeout 120
     healthCheckPath: /health/
     autoDeployTrigger: commit
