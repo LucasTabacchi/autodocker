@@ -45,7 +45,6 @@
 - Modify: `.env.example`
 - Modify: `.env.docker.example`
 - Modify: `.env.prod.example`
-- Modify: `.env.production.example`
 - Modify: `README.md`
 
 - [ ] Remove persistent disk usage and move the Render Blueprint to the free web plan.

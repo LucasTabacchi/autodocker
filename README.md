@@ -128,12 +128,19 @@ docker compose exec web python manage.py createsuperuser
 ```
 
 ### Entornos incluidos
-- `.env`: desarrollo local con SQLite y jobs por thread.
-- `.env.docker.example`: base para crear tu `.env.docker` local en desarrollo dockerizado con PostgreSQL + Redis + Celery.
-- `.env.production.example`: base para producción.
+- `.env`: archivo local real para desarrollo simple con `manage.py`. Django lo carga automáticamente.
+- `.env.example`: plantilla base para crear o reconstruir tu `.env` local.
+- `.env.docker.example`: plantilla para crear `.env.docker` en desarrollo con `docker compose`.
+- `.env.prod.example`: plantilla para crear `.env.prod` en producción o con `docker-compose.prod.yml`.
 - `AUTODOCKER_ENABLE_RUNTIME_JOBS`: habilita preview/validación que construyen o ejecutan contenedores.
 - `AUTODOCKER_TOKEN_ENCRYPTION_KEY`: clave separada para proteger tokens externos almacenados.
 - `SUPABASE_STORAGE_*`: habilitan storage remoto privado para los ZIPs subidos cuando querés evitar `media/` local.
+
+### Convención recomendada
+- `manage.py` local: usá `.env`
+- `docker compose`: copiá `.env.docker.example` a `.env.docker`
+- producción / `docker-compose.prod.yml`: copiá `.env.prod.example` a `.env.prod`
+- no uses `.env.prod` ni `.env.docker` como templates versionados; son archivos locales con secretos
 
 ## Roadmap por fases
 ### Fase 1
