@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -32,6 +34,7 @@ from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
 from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
+from core.services.ingestion import cleanup_workspace, prepare_source_workspace
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
@@ -110,6 +113,67 @@ class DatabaseConfigTests(SimpleTestCase):
             },
         )
 
+
+class MediaStorageConfigTests(SimpleTestCase):
+    def test_uses_supabase_s3_backend_when_storage_env_is_present(self):
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_STORAGE_BUCKET": "autodocker-media",
+                "SUPABASE_STORAGE_S3_ENDPOINT_URL": "https://example.supabase.co/storage/v1/s3",
+                "SUPABASE_STORAGE_ACCESS_KEY_ID": "storage-access-key",
+                "SUPABASE_STORAGE_SECRET_ACCESS_KEY": "storage-secret",
+                "SUPABASE_STORAGE_S3_REGION": "us-east-1",
+            },
+            clear=True,
+        ):
+            config = project_settings.media_storage_config()
+
+        self.assertEqual(config["BACKEND"], "storages.backends.s3.S3Storage")
+        self.assertEqual(config["OPTIONS"]["bucket_name"], "autodocker-media")
+        self.assertEqual(
+            config["OPTIONS"]["endpoint_url"],
+            "https://example.supabase.co/storage/v1/s3",
+        )
+        self.assertTrue(config["OPTIONS"]["querystring_auth"])
+
+
+class RemoteArchiveIngestionTests(SimpleTestCase):
+    def test_prepare_source_workspace_reads_zip_from_storage_stream(self):
+        class RemoteArchiveFile:
+            def __init__(self, payload: bytes):
+                self.payload = payload
+                self.open_calls = 0
+
+            def open(self, mode: str = "rb"):
+                self.open_calls += 1
+                return io.BytesIO(self.payload)
+
+            @property
+            def path(self):
+                raise AssertionError("prepare_source_workspace should not require archive.path")
+
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED) as zipped:
+            zipped.writestr("next-sample/package.json", '{"name": "next-sample"}')
+
+        analysis = SimpleNamespace(
+            source_type=ProjectAnalysis.SourceType.ZIP,
+            archive=RemoteArchiveFile(archive_buffer.getvalue()),
+            repository_url="",
+        )
+
+        temp_dir = None
+        try:
+            temp_dir, source_root = prepare_source_workspace(analysis, prefix="autodocker-test-")
+            self.assertEqual(analysis.archive.open_calls, 1)
+            self.assertTrue((source_root / "package.json").exists())
+        finally:
+            if temp_dir is not None:
+                cleanup_workspace(temp_dir)
+
+
+class AdditionalDetectorCoverageTests(SimpleTestCase):
     def test_detects_express_health_endpoint_and_env_fallback_port(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -926,7 +990,7 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(
             response.json()["detail"],
-            "No se pudo guardar el archivo subido. Revisá los permisos de MEDIA_ROOT o del volumen Docker.",
+            "No se pudo guardar el archivo subido. Revisá la configuración del storage de media o del volumen local.",
         )
 
     def test_editing_artifact_creates_snapshot_version(self):

@@ -133,6 +133,7 @@ docker compose exec web python manage.py createsuperuser
 - `.env.production.example`: base para producción.
 - `AUTODOCKER_ENABLE_RUNTIME_JOBS`: habilita preview/validación que construyen o ejecutan contenedores.
 - `AUTODOCKER_TOKEN_ENCRYPTION_KEY`: clave separada para proteger tokens externos almacenados.
+- `SUPABASE_STORAGE_*`: habilitan storage remoto privado para los ZIPs subidos cuando querés evitar `media/` local.
 
 ## Roadmap por fases
 ### Fase 1
@@ -165,9 +166,10 @@ docker compose exec web python manage.py createsuperuser
 
 ## Deploy en Render
 ### Blueprint incluido
-- El repo ahora incluye [render.yaml](./render.yaml) para desplegar AutoDocker en Render con un único web service, usando tu PostgreSQL externo y disk persistente para `media/`.
+- El repo ahora incluye [render.yaml](./render.yaml) para desplegar AutoDocker en Render con un único web service `free`, usando tu PostgreSQL externo y Supabase Storage para reemplazar `media/`.
 - El deploy está configurado en `AUTODOCKER_ASYNC_MODE=thread` y `AUTODOCKER_ENABLE_RUNTIME_JOBS=false`.
-- Esa decisión es intencional: con la arquitectura actual, separar `web` y `worker` rompería el acceso a ZIPs subidos porque `archive` se guarda en el filesystem local.
+- Esa decisión sigue siendo intencional: con la arquitectura actual, separar `web` y `worker` seguiría exigiendo storage compartido y coordinación adicional para jobs.
+- Los ZIPs de análisis ya no necesitan disk persistente en Render si configurás el bucket privado de Supabase Storage.
 - `PYTHON_VERSION` queda fijada en `3.13.2` para no depender del default actual de Render.
 
 ### Qué queda habilitado y qué no
@@ -179,9 +181,22 @@ docker compose exec web python manage.py createsuperuser
 1. Commit y push de `render.yaml` a `main`.
 2. En Render, elegir `New +` -> `Blueprint`.
 3. Seleccionar el repo `LucasTabacchi/autodocker`.
-4. En el formulario de variables, pegar tu `DATABASE_URL` de Supabase.
-5. Confirmar el Blueprint y esperar el primer deploy.
+4. En Supabase, crear un bucket privado para media, por ejemplo `autodocker-media`.
+5. En Supabase, generar credenciales S3 para Storage y copiar:
+   - endpoint S3
+   - region
+   - access key id
+   - secret access key
+6. En el formulario de variables de Render, pegar:
+   - `DATABASE_URL`
+   - `SUPABASE_STORAGE_BUCKET`
+   - `SUPABASE_STORAGE_S3_ENDPOINT_URL`
+   - `SUPABASE_STORAGE_S3_REGION`
+   - `SUPABASE_STORAGE_ACCESS_KEY_ID`
+   - `SUPABASE_STORAGE_SECRET_ACCESS_KEY`
+7. Confirmar el Blueprint y esperar el primer deploy.
 
 ### Notas de costo y límites
-- El `starter` del web service es necesario para poder adjuntar disk persistente.
+- El plan `free` evita el requisito de tarjeta en el deploy del web service.
+- Supabase Storage free tiene límites; sirve bien para demo y testing, pero no para cargas grandes o muchos ZIPs.
 - Si querés pasar luego a `web + worker`, primero tenés que sacar los uploads de disco local y moverlos a storage compartido externo.

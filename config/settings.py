@@ -101,6 +101,48 @@ def database_config() -> dict:
     }
 
 
+def media_storage_config() -> dict:
+    bucket_name = env("SUPABASE_STORAGE_BUCKET")
+    endpoint_url = env("SUPABASE_STORAGE_S3_ENDPOINT_URL")
+    access_key = env("SUPABASE_STORAGE_ACCESS_KEY_ID")
+    secret_key = env("SUPABASE_STORAGE_SECRET_ACCESS_KEY")
+    region_name = env("SUPABASE_STORAGE_S3_REGION")
+    media_prefix = (env("SUPABASE_STORAGE_MEDIA_PATH_PREFIX", "") or "").strip("/")
+
+    if not all([bucket_name, endpoint_url, access_key, secret_key, region_name]):
+        return {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
+    options = {
+        "bucket_name": bucket_name,
+        "endpoint_url": endpoint_url,
+        "access_key": access_key,
+        "secret_key": secret_key,
+        "region_name": region_name,
+        "default_acl": None,
+        "querystring_auth": True,
+        "file_overwrite": False,
+        "signature_version": "s3v4",
+        "addressing_style": "path",
+    }
+    if media_prefix:
+        options["location"] = media_prefix
+
+    return {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": options,
+    }
+
+
+def staticfiles_storage_config() -> dict:
+    return {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if not DEBUG
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        )
+    }
+
+
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-secret-key")
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
@@ -170,11 +212,13 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-if not DEBUG:
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+STORAGES = {
+    "default": media_storage_config(),
+    "staticfiles": staticfiles_storage_config(),
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

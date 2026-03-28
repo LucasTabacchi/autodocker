@@ -69,7 +69,10 @@ def _prepare_source_root(analysis: ProjectAnalysis, temp_dir: Path) -> Path:
             raise SourceMaterializationError("No se encontró el archivo ZIP cargado.")
         extract_root = temp_dir / "source"
         extract_root.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(analysis.archive.path) as zipped:
+        archive_path = temp_dir / "uploaded-source.zip"
+        with analysis.archive.open("rb") as archive_file, archive_path.open("wb") as local_archive:
+            shutil.copyfileobj(archive_file, local_archive)
+        with zipfile.ZipFile(archive_path) as zipped:
             _safe_extract(zipped, extract_root)
         return _normalize_root(extract_root)
 

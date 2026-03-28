@@ -132,7 +132,7 @@ class AnalysisListCreateApiView(AuthenticatedApiView):
                 {
                     "detail": (
                         "No se pudo guardar el archivo subido. "
-                        "Revisá los permisos de MEDIA_ROOT o del volumen Docker."
+                        "Revisá la configuración del storage de media o del volumen local."
                     )
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -2,7 +2,7 @@ services:
   - type: web
     name: autodocker-web
     runtime: python
-    plan: starter
+    plan: free
     region: virginia
     numInstances: 1
     buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python manage.py collectstatic --noinput
@@ -10,10 +10,6 @@ services:
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-1} --timeout 120
     healthCheckPath: /health/
     autoDeployTrigger: commit
-    disk:
-      name: media
-      mountPath: /opt/render/project/src/media
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -49,3 +45,13 @@ services:
         value: "autodocker@render.local"
       - key: DJANGO_EMAIL_BACKEND
         value: "django.core.mail.backends.console.EmailBackend"
+      - key: SUPABASE_STORAGE_BUCKET
+        sync: false
+      - key: SUPABASE_STORAGE_S3_ENDPOINT_URL
+        sync: false
+      - key: SUPABASE_STORAGE_S3_REGION
+        sync: false
+      - key: SUPABASE_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: SUPABASE_STORAGE_SECRET_ACCESS_KEY
+        sync: false
