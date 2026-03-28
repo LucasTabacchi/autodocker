@@ -122,14 +122,17 @@ La implementación está en `core/services/generator.py`. Ahí se construyen var
 
 ### Local con Docker
 ```bash
+cp .env.docker.example .env.docker
 docker compose up --build
 docker compose exec web python manage.py createsuperuser
 ```
 
 ### Entornos incluidos
 - `.env`: desarrollo local con SQLite y jobs por thread.
-- `.env.docker`: desarrollo dockerizado con PostgreSQL + Redis + Celery.
+- `.env.docker.example`: base para crear tu `.env.docker` local en desarrollo dockerizado con PostgreSQL + Redis + Celery.
 - `.env.production.example`: base para producción.
+- `AUTODOCKER_ENABLE_RUNTIME_JOBS`: habilita preview/validación que construyen o ejecutan contenedores.
+- `AUTODOCKER_TOKEN_ENCRYPTION_KEY`: clave separada para proteger tokens externos almacenados.
 
 ## Roadmap por fases
 ### Fase 1
@@ -159,3 +162,26 @@ docker compose exec web python manage.py createsuperuser
 - SSO, RBAC, auditoría y políticas de seguridad.
 - Integraciones con GitHub/GitLab/Bitbucket.
 - Sugerencias de despliegue multi-cloud y políticas de cumplimiento.
+
+## Deploy en Render
+### Blueprint incluido
+- El repo ahora incluye [render.yaml](./render.yaml) para desplegar AutoDocker en Render con un único web service, usando tu PostgreSQL externo y disk persistente para `media/`.
+- El deploy está configurado en `AUTODOCKER_ASYNC_MODE=thread` y `AUTODOCKER_ENABLE_RUNTIME_JOBS=false`.
+- Esa decisión es intencional: con la arquitectura actual, separar `web` y `worker` rompería el acceso a ZIPs subidos porque `archive` se guarda en el filesystem local.
+- `PYTHON_VERSION` queda fijada en `3.13.2` para no depender del default actual de Render.
+
+### Qué queda habilitado y qué no
+- Funciona: auth, dashboard, análisis por ZIP/Git, generación de artefactos, edición, workspaces, invitaciones y descarga.
+- Queda deshabilitado en Render: preview ejecutable y validación Docker host-based.
+- Si más adelante querés `worker` real en Render, el paso correcto es mover los uploads a storage compartido externo antes de separar procesos.
+
+### Cómo desplegar
+1. Commit y push de `render.yaml` a `main`.
+2. En Render, elegir `New +` -> `Blueprint`.
+3. Seleccionar el repo `LucasTabacchi/autodocker`.
+4. En el formulario de variables, pegar tu `DATABASE_URL` de Supabase.
+5. Confirmar el Blueprint y esperar el primer deploy.
+
+### Notas de costo y límites
+- El `starter` del web service es necesario para poder adjuntar disk persistente.
+- Si querés pasar luego a `web + worker`, primero tenés que sacar los uploads de disco local y moverlos a storage compartido externo.

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import io
 import json
 import os
 import subprocess
 import tempfile
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,7 +12,6 @@ import yaml
 from config import settings as project_settings
 from django.contrib.auth import get_user_model
 from django.core import mail
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
@@ -29,6 +26,7 @@ from core.models import (
     WorkspaceInvitation,
     WorkspaceMembership,
 )
+from core.crypto import TOKEN_PREFIX
 from core.services.build_validation import BuildValidationResult
 from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
@@ -36,6 +34,7 @@ from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
+from core.test_support import AnalysisApiTestSupport
 
 
 class StackDetectorTests(SimpleTestCase):
@@ -799,7 +798,7 @@ class DashboardAuthTests(TestCase):
 
 
 @override_settings(AUTODOCKER_ASYNC_MODE="inline", CELERY_TASK_ALWAYS_EAGER=False)
-class AnalysisApiTests(TestCase):
+class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             username="lucas",
@@ -861,6 +860,9 @@ class AnalysisApiTests(TestCase):
         self.assertTrue(analysis.healthcheck_report.get("summary"))
         self.assertTrue(analysis.cicd_report.get("summary"))
         self.assertTrue(analysis.deploy_report.get("summary"))
+        self.assertEqual(analysis.security_report.get("coverage"), "heuristic")
+        self.assertEqual(analysis.cicd_report.get("maturity"), "bootstrap")
+        self.assertEqual(analysis.deploy_report.get("maturity"), "bootstrap")
 
     def test_create_analysis_persists_development_profile(self):
         response = self._post_analysis(
@@ -1073,6 +1075,29 @@ class AnalysisApiTests(TestCase):
         self.assertEqual(payload["status"], ExecutionJob.Status.FAILED)
         self.assertEqual(payload["logs"], "build failed")
 
+    @override_settings(AUTODOCKER_ENABLE_RUNTIME_JOBS=False)
+    def test_validate_endpoint_returns_409_when_runtime_jobs_are_disabled(self):
+        response = self._post_analysis(
+            files={
+                "next-sample/package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                )
+            }
+        )
+        analysis_id = response.json()["id"]
+
+        validate_response = self.client.post(
+            reverse("core-api:analysis-validate", args=[analysis_id])
+        )
+
+        self.assertEqual(validate_response.status_code, 409)
+        self.assertIn("AUTODOCKER_ENABLE_RUNTIME_JOBS", validate_response.json()["detail"])
+        self.assertFalse(ExecutionJob.objects.filter(kind=ExecutionJob.Kind.VALIDATION).exists())
+
     @patch("core.services.execution_runner.PreviewService.start")
     def test_preview_endpoint_creates_ready_preview_run(self, mock_start):
         def fake_start(preview_run):
@@ -1120,6 +1145,29 @@ class AnalysisApiTests(TestCase):
         job = ExecutionJob.objects.get(kind=ExecutionJob.Kind.PREVIEW)
         self.assertEqual(job.status, ExecutionJob.Status.READY)
 
+    @override_settings(AUTODOCKER_ENABLE_RUNTIME_JOBS=False)
+    def test_preview_endpoint_returns_409_when_runtime_jobs_are_disabled(self):
+        response = self._post_analysis(
+            files={
+                "next-sample/package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                )
+            }
+        )
+        analysis_id = response.json()["id"]
+
+        preview_response = self.client.post(
+            reverse("core-api:analysis-preview", args=[analysis_id])
+        )
+
+        self.assertEqual(preview_response.status_code, 409)
+        self.assertIn("AUTODOCKER_ENABLE_RUNTIME_JOBS", preview_response.json()["detail"])
+        self.assertFalse(ExecutionJob.objects.filter(kind=ExecutionJob.Kind.PREVIEW).exists())
+
     @patch(
         "core.services.execution_runner.GitHubPullRequestService.create_pull_request",
         return_value=GitHubPullRequestResult(
@@ -1165,6 +1213,9 @@ class AnalysisApiTests(TestCase):
         self.assertEqual(payload["status"], ExecutionJob.Status.READY)
         self.assertEqual(payload["result_payload"]["pr_url"], "https://github.com/acme/demo/pull/7")
         self.assertEqual(ExternalRepoConnection.objects.count(), 1)
+        connection = ExternalRepoConnection.objects.get()
+        self.assertTrue(connection.access_token.startswith(TOKEN_PREFIX))
+        self.assertEqual(connection.get_access_token(), "ghp_test_123")
 
     def test_connection_crud_endpoints_work(self):
         create_response = self.client.post(
@@ -1177,10 +1228,15 @@ class AnalysisApiTests(TestCase):
         )
         self.assertEqual(create_response.status_code, 201)
         connection_id = create_response.json()["id"]
+        connection = ExternalRepoConnection.objects.get(pk=connection_id)
+        self.assertNotEqual(connection.access_token, "ghp_local_123")
+        self.assertTrue(connection.access_token.startswith(TOKEN_PREFIX))
+        self.assertEqual(connection.get_access_token(), "ghp_local_123")
 
         list_response = self.client.get(reverse("core-api:connection-list-create"))
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(len(list_response.json()), 1)
+        self.assertEqual(list_response.json()[0]["token_storage"], "encrypted")
 
         delete_response = self.client.delete(
             reverse("core-api:connection-detail", args=[connection_id])
@@ -1442,60 +1498,16 @@ class AnalysisApiTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def _build_workspace_analysis_for_viewer(self, *, username="viewer"):
-        viewer = get_user_model().objects.create_user(
-            username=username,
-            password="test-pass-123",
-        )
-        workspace = Workspace.objects.create(
+    def test_legacy_plaintext_connection_token_can_still_be_read(self):
+        connection = ExternalRepoConnection.objects.create(
             owner=self.user,
-            name=f"Equipo {username}",
-            slug=f"equipo-{username}",
-            description="Compartido",
-            visibility=Workspace.Visibility.TEAM,
+            provider=ExternalRepoConnection.Provider.GITHUB,
+            label="legacy-gh",
+            account_name="lucas",
+            access_token="temporary-token",
         )
-        WorkspaceMembership.objects.create(
-            workspace=workspace,
-            user=self.user,
-            role=WorkspaceMembership.Role.OWNER,
-        )
-        WorkspaceMembership.objects.create(
-            workspace=workspace,
-            user=viewer,
-            role=WorkspaceMembership.Role.VIEWER,
-        )
-        analysis = ProjectAnalysis.objects.create(
-            owner=self.user,
-            workspace=workspace,
-            project_name="demo",
-            source_type=ProjectAnalysis.SourceType.GIT,
-            repository_url="https://github.com/acme/demo",
-            status=ProjectAnalysis.Status.READY,
-        )
-        GeneratedArtifact.objects.create(
-            analysis=analysis,
-            kind=GeneratedArtifact.Kind.DOCKERFILE,
-            path="Dockerfile",
-            description="Dockerfile",
-            content="FROM node:22-alpine",
-        )
-        artifact = GeneratedArtifact.objects.get(analysis=analysis, path="Dockerfile")
-        return viewer, workspace, analysis, artifact
+        ExternalRepoConnection.objects.filter(pk=connection.pk).update(access_token="legacy-plain-token")
+        connection.refresh_from_db()
 
-    def _post_analysis(self, *, files: dict[str, str], generation_profile: str | None = None):
-        archive = SimpleUploadedFile(
-            "project.zip",
-            self._build_zip(files),
-            content_type="application/zip",
-        )
-        payload = {"project_name": "next-sample", "archive": archive}
-        if generation_profile:
-            payload["generation_profile"] = generation_profile
-        return self.client.post(reverse("core-api:analysis-list-create"), payload)
-
-    def _build_zip(self, files: dict[str, str]) -> bytes:
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zipped:
-            for path, content in files.items():
-                zipped.writestr(path, content)
-        return buffer.getvalue()
+        self.assertEqual(connection.token_storage, "legacy-plain")
+        self.assertEqual(connection.get_access_token(), "legacy-plain-token")

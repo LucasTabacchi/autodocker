@@ -82,5 +82,5 @@ class ExecutionJobRunner:
             return access_token
         connection = self._resolve_connection(job)
         if connection:
-            return connection.access_token
+            return connection.get_access_token()
         raise RuntimeError("Se requiere un token de GitHub o una conexión guardada para abrir el PR.")

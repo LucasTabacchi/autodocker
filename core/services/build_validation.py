@@ -12,6 +12,8 @@ from core.services.runtime import (
     CommandExecutionError,
     docker_command,
     docker_compose_command,
+    ensure_docker_runtime_access,
+    ensure_runtime_jobs_enabled,
     run_command,
 )
 
@@ -29,6 +31,8 @@ class BuildValidationResult:
 
 class BuildValidationService:
     def validate(self, analysis: ProjectAnalysis) -> BuildValidationResult:
+        ensure_runtime_jobs_enabled("La validación de build")
+        ensure_docker_runtime_access("La validación de build")
         temp_dir, source_root = prepare_source_workspace(analysis, prefix="autodocker-validate-")
         try:
             overlay_generated_artifacts(source_root, list(analysis.artifacts.all()))

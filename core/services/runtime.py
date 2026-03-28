@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from django.conf import settings
+
 
 class CommandExecutionError(RuntimeError):
     """Raised when a subprocess command fails."""
@@ -74,6 +76,38 @@ def docker_command() -> list[str]:
     if shutil.which("docker"):
         return ["docker"]
     raise CommandExecutionError("No se encontró el binario requerido: docker")
+
+
+def runtime_jobs_enabled() -> bool:
+    return bool(getattr(settings, "AUTODOCKER_ENABLE_RUNTIME_JOBS", False))
+
+
+def ensure_runtime_jobs_enabled(action_label: str) -> None:
+    if runtime_jobs_enabled():
+        return
+    raise CommandExecutionError(
+        (
+            f"{action_label} está deshabilitado en este entorno. "
+            "Activá AUTODOCKER_ENABLE_RUNTIME_JOBS=true solo donde realmente quieras "
+            "permitir jobs que construyen o ejecutan contenedores."
+        )
+    )
+
+
+def ensure_docker_runtime_access(action_label: str) -> None:
+    docker_command()
+    if os.environ.get("DOCKER_HOST"):
+        return
+    if os.name == "nt":
+        return
+    if Path("/var/run/docker.sock").exists():
+        return
+    raise CommandExecutionError(
+        (
+            f"{action_label} requiere acceso al Docker host. "
+            "Montá /var/run/docker.sock o configurá DOCKER_HOST antes de habilitar estos jobs."
+        )
+    )
 
 
 def docker_compose_command() -> list[str]:

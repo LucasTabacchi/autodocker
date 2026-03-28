@@ -36,6 +36,7 @@ from core.models import (
 )
 from core.services.diffing import ArtifactDiffService
 from core.services.preview import PreviewService
+from core.services.runtime import runtime_jobs_enabled
 from core.services.workspaces import (
     accept_workspace_invitation,
     add_workspace_member,
@@ -218,6 +219,16 @@ class AnalysisDiffApiView(AuthenticatedApiView):
 
 class AnalysisValidateApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
+        if not runtime_jobs_enabled():
+            return Response(
+                {
+                    "detail": (
+                        "La validación de build está deshabilitada en este entorno. "
+                        "Configurá AUTODOCKER_ENABLE_RUNTIME_JOBS=true para habilitarla."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
             return Response({"detail": "No tenés permisos para validar este análisis."}, status=status.HTTP_403_FORBIDDEN)
@@ -279,6 +290,16 @@ class AnalysisGitHubPrApiView(AuthenticatedApiView):
 
 class AnalysisPreviewApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
+        if not runtime_jobs_enabled():
+            return Response(
+                {
+                    "detail": (
+                        "La preview ejecutable está deshabilitada en este entorno. "
+                        "Configurá AUTODOCKER_ENABLE_RUNTIME_JOBS=true para habilitarla."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
             return Response({"detail": "No tenés permisos para ejecutar previews en este análisis."}, status=status.HTTP_403_FORBIDDEN)

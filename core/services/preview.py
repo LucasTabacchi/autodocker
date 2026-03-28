@@ -15,12 +15,16 @@ from core.services.runtime import (
     CommandExecutionError,
     docker_command,
     docker_compose_command,
+    ensure_docker_runtime_access,
+    ensure_runtime_jobs_enabled,
     run_command,
 )
 
 
 class PreviewService:
     def start(self, preview_run: PreviewRun) -> PreviewRun:
+        ensure_runtime_jobs_enabled("La preview ejecutable")
+        ensure_docker_runtime_access("La preview ejecutable")
         analysis = preview_run.analysis
         temp_dir, source_root = prepare_source_workspace(analysis, prefix="autodocker-preview-")
         preview_run.status = PreviewRun.Status.RUNNING

@@ -23,6 +23,8 @@ class SecurityScanReport:
     summary: str
     findings: list[SecurityFinding] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
+    coverage: str = "heuristic"
+    limitations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -30,6 +32,8 @@ class SecurityScanReport:
             "summary": self.summary,
             "findings": [finding.to_dict() for finding in self.findings],
             "recommendations": self.recommendations,
+            "coverage": self.coverage,
+            "limitations": self.limitations,
         }
 
 
@@ -117,6 +121,9 @@ class SecurityScannerService:
             )
         if any(component.framework in {"Next.js", "Django", "FastAPI"} for component in detection.components):
             recommendations.append("Activá validación de build y smoke checks antes de abrir un PR automático.")
+        recommendations.append(
+            "Tomá este scanner como heurístico: todavía no reemplaza revisión humana ni herramientas SAST/secret scanning dedicadas."
+        )
 
         findings = self._dedupe_findings(findings)
         score = max(0, 100 - sum(self.SEVERITY_WEIGHT.get(item.severity, 0) for item in findings))
@@ -127,6 +134,10 @@ class SecurityScannerService:
             summary=summary,
             findings=findings,
             recommendations=recommendations,
+            limitations=[
+                "No ejecuta SAST ni dependency scanning real sobre lockfiles o imágenes.",
+                "Las detecciones de secretos y exposición son heurísticas basadas en nombres y plantillas generadas.",
+            ],
         )
 
     def _build_summary(self, findings: list[SecurityFinding], score: int) -> str:

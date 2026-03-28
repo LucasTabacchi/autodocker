@@ -6,6 +6,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Max, Q
 
+from core.crypto import is_encrypted_secret, open_secret, seal_secret
+
 
 class WorkspaceQuerySet(models.QuerySet):
     def for_user(self, user):
@@ -453,6 +455,21 @@ class ExternalRepoConnection(models.Model):
 
     def __str__(self) -> str:
         return f"{self.provider}:{self.label}"
+
+    @property
+    def token_storage(self) -> str:
+        return "encrypted" if is_encrypted_secret(self.access_token) else "legacy-plain"
+
+    def get_access_token(self) -> str:
+        return open_secret(self.access_token)
+
+    def set_access_token(self, value: str) -> None:
+        self.access_token = seal_secret(value)
+
+    def save(self, *args, **kwargs):
+        if self.access_token and not is_encrypted_secret(self.access_token):
+            self.access_token = seal_secret(self.access_token)
+        return super().save(*args, **kwargs)
 
 
 class PreviewRunQuerySet(models.QuerySet):

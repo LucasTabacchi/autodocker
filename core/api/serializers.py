@@ -67,6 +67,7 @@ class PreviewRunSerializer(serializers.ModelSerializer):
 
 class ExternalRepoConnectionSerializer(serializers.ModelSerializer):
     has_token = serializers.SerializerMethodField()
+    token_storage = serializers.CharField(read_only=True)
 
     class Meta:
         model = ExternalRepoConnection
@@ -76,6 +77,7 @@ class ExternalRepoConnectionSerializer(serializers.ModelSerializer):
             "label",
             "account_name",
             "has_token",
+            "token_storage",
             "created_at",
             "updated_at",
         )
