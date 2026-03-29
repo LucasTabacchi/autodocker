@@ -62,11 +62,16 @@ class ExecutionJobRunner:
                     "status": preview_run.status,
                     "access_url": preview_run.access_url,
                     "ports": preview_run.ports,
+                    "runtime_kind": preview_run.runtime_kind,
                 }
                 job.logs = preview_run.logs
                 job.status = (
                     ExecutionJob.Status.READY
-                    if preview_run.status == preview_run.Status.READY
+                    if preview_run.status in {
+                        preview_run.Status.QUEUED,
+                        preview_run.Status.RUNNING,
+                        preview_run.Status.READY,
+                    }
                     else ExecutionJob.Status.FAILED
                 )
             else:  # pragma: no cover

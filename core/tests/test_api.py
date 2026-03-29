@@ -23,6 +23,7 @@ from core.models import (
     ExternalRepoConnection,
     GeneratedArtifact,
     PreviewRun,
+    PreviewRunnerSession,
     ProjectAnalysis,
     Workspace,
     WorkspaceInvitation,
@@ -587,6 +588,37 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             capabilities["preview"]["reason"],
         )
 
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_VALIDATION_BACKEND="github_actions",
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    def test_analysis_detail_exposes_remote_preview_runtime_capability(self):
+        response = self._post_analysis(
+            files={
+                "next-sample/package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                )
+            }
+        )
+        analysis_id = response.json()["id"]
+
+        detail_response = self.client.get(
+            reverse("core-api:analysis-detail", args=[analysis_id])
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        capabilities = detail_response.json()["runtime_capabilities"]
+        self.assertEqual(capabilities["preview"]["backend"], "remote_runner")
+        self.assertTrue(capabilities["preview"]["enabled"])
+        self.assertEqual(capabilities["preview"]["reason"], "")
+
     def test_build_validation_result_can_carry_remote_metadata_and_payload(self):
         result = BuildValidationResult(
             success=True,
@@ -982,6 +1014,61 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         job = ExecutionJob.objects.get(kind=ExecutionJob.Kind.PREVIEW)
         self.assertEqual(job.status, ExecutionJob.Status.READY)
 
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview.RemotePreviewService.start")
+    def test_preview_endpoint_uses_remote_runner_backend_when_configured(self, mock_start):
+        def fake_start(preview_run):
+            preview_run.status = PreviewRun.Status.RUNNING
+            preview_run.runtime_kind = PreviewRun.RuntimeKind.COMPOSE
+            preview_run.access_url = ""
+            preview_run.ports = {}
+            preview_run.logs = "runner accepted preview"
+            preview_run.resource_names = ["prv-demo-web"]
+            preview_run.save(
+                update_fields=[
+                    "status",
+                    "runtime_kind",
+                    "access_url",
+                    "ports",
+                    "logs",
+                    "resource_names",
+                    "updated_at",
+                ]
+            )
+            return preview_run
+
+        mock_start.side_effect = fake_start
+        response = self._post_analysis(
+            files={
+                "next-sample/package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                )
+            }
+        )
+        analysis_id = response.json()["id"]
+
+        preview_response = self.client.post(
+            reverse("core-api:analysis-preview", args=[analysis_id])
+        )
+
+        self.assertEqual(preview_response.status_code, 202)
+        payload = preview_response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.RUNNING)
+        self.assertEqual(payload["runtime_kind"], PreviewRun.RuntimeKind.COMPOSE)
+        self.assertEqual(payload["resource_names"], ["prv-demo-web"])
+        mock_start.assert_called_once()
+        job = ExecutionJob.objects.get(kind=ExecutionJob.Kind.PREVIEW)
+        self.assertEqual(job.status, ExecutionJob.Status.READY)
+
     @override_settings(AUTODOCKER_ENABLE_RUNTIME_JOBS=False)
     def test_preview_endpoint_returns_409_when_runtime_jobs_are_disabled(self):
         response = self._post_analysis(
@@ -1266,6 +1353,91 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(response.status_code, 403)
         mock_stop.assert_not_called()
 
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview.RemotePreviewService.refresh_logs")
+    def test_preview_detail_refreshes_remote_runner_logs_when_configured(self, mock_refresh_logs):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        preview = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.RUNNING,
+            runtime_kind=PreviewRun.RuntimeKind.COMPOSE,
+            resource_names=["prv-demo-web"],
+        )
+
+        def fake_refresh(preview_run):
+            preview_run.status = PreviewRun.Status.READY
+            preview_run.access_url = "https://prv-demo.previews.example.com"
+            preview_run.logs = "remote preview logs"
+            preview_run.ports = {"web": ["https://prv-demo.previews.example.com"]}
+            preview_run.save(
+                update_fields=["status", "access_url", "logs", "ports", "updated_at"]
+            )
+            return preview_run
+
+        mock_refresh_logs.side_effect = fake_refresh
+
+        response = self.client.get(reverse("core-api:preview-detail", args=[preview.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.READY)
+        self.assertEqual(payload["logs"], "remote preview logs")
+        self.assertEqual(payload["access_url"], "https://prv-demo.previews.example.com")
+        mock_refresh_logs.assert_called_once()
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview.RemotePreviewService.stop")
+    def test_preview_stop_uses_remote_runner_backend_when_configured(self, mock_stop):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        preview = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.READY,
+            runtime_kind=PreviewRun.RuntimeKind.COMPOSE,
+            access_url="https://prv-demo.previews.example.com",
+            ports={"web": ["https://prv-demo.previews.example.com"]},
+            resource_names=["prv-demo-web"],
+        )
+
+        def fake_stop(preview_run):
+            preview_run.status = PreviewRun.Status.STOPPED
+            preview_run.logs = "remote preview stopped"
+            preview_run.save(update_fields=["status", "logs", "updated_at"])
+            return preview_run
+
+        mock_stop.side_effect = fake_stop
+
+        response = self.client.post(reverse("core-api:preview-stop", args=[preview.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.STOPPED)
+        self.assertEqual(payload["logs"], "remote preview stopped")
+        mock_stop.assert_called_once()
+
     def test_workspace_viewer_cannot_start_preview(self):
         viewer, _workspace, analysis, _artifact = self._build_workspace_analysis_for_viewer(
             username="viewer-preview-start"
@@ -1348,3 +1520,139 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
 
         self.assertEqual(connection.token_storage, "legacy-plain")
         self.assertEqual(connection.get_access_token(), "legacy-plain-token")
+
+
+class PreviewRunnerApiTests(TestCase):
+    preview_id = "11111111-1111-4111-8111-111111111111"
+    analysis_id = "22222222-2222-4222-8222-222222222222"
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+        AUTODOCKER_ASYNC_MODE="inline",
+    )
+    @patch("core.runner_api.views.schedule_preview_runner_session")
+    def test_runner_create_preview_creates_session(self, mock_schedule):
+        response = self.client.post(
+            "/previews",
+            data=json.dumps(
+                {
+                    "preview_id": self.preview_id,
+                    "analysis_id": self.analysis_id,
+                    "project_name": "demo-app",
+                    "bundle_url": "https://storage.example/bundles/preview.zip",
+                    "bundle_sha256": "a" * 64,
+                    "requested_ttl_seconds": 1800,
+                    "metadata": {
+                        "generation_profile": "production",
+                        "components": [{"name": "web"}],
+                        "services": ["postgres"],
+                    },
+                }
+            ),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer preview-token",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertEqual(payload["preview_id"], self.preview_id)
+        self.assertEqual(payload["status"], PreviewRunnerSession.Status.STARTING)
+        session = PreviewRunnerSession.objects.get(preview_id=self.preview_id)
+        self.assertEqual(session.project_name, "demo-app")
+        self.assertEqual(session.metadata["generation_profile"], "production")
+        mock_schedule.assert_called_once()
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    def test_runner_endpoints_require_bearer_token(self):
+        response = self.client.post(
+            "/previews",
+            data=json.dumps(
+                {
+                    "preview_id": self.preview_id,
+                    "analysis_id": self.analysis_id,
+                    "project_name": "demo-app",
+                    "bundle_url": "https://storage.example/bundles/preview.zip",
+                    "bundle_sha256": "a" * 64,
+                    "requested_ttl_seconds": 1800,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.runner_api.views.PreviewRunnerSessionService.refresh_logs")
+    def test_runner_logs_endpoint_refreshes_session(self, mock_refresh_logs):
+        session = PreviewRunnerSession.objects.create(
+            preview_id=self.preview_id,
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            status=PreviewRunnerSession.Status.STARTING,
+        )
+
+        def fake_refresh(target_session):
+            target_session.logs = "runner logs"
+            target_session.status = PreviewRunnerSession.Status.READY
+            target_session.save(update_fields=["logs", "status", "updated_at"])
+            return target_session
+
+        mock_refresh_logs.side_effect = fake_refresh
+
+        response = self.client.get(
+            f"/previews/{self.preview_id}/logs",
+            HTTP_AUTHORIZATION="Bearer preview-token",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["preview_id"], self.preview_id)
+        self.assertEqual(payload["logs"], "runner logs")
+        mock_refresh_logs.assert_called_once_with(session)
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.runner_api.views.PreviewRunnerSessionService.stop")
+    def test_runner_stop_endpoint_stops_session(self, mock_stop):
+        session = PreviewRunnerSession.objects.create(
+            preview_id=self.preview_id,
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            status=PreviewRunnerSession.Status.READY,
+            runtime_kind=PreviewRunnerSession.RuntimeKind.COMPOSE,
+            access_url="https://prv-demo.previews.example.com",
+            resource_names=["prv-demo-web"],
+        )
+
+        def fake_stop(target_session):
+            target_session.status = PreviewRunnerSession.Status.STOPPED
+            target_session.save(update_fields=["status", "updated_at"])
+            return target_session
+
+        mock_stop.side_effect = fake_stop
+
+        response = self.client.post(
+            f"/previews/{self.preview_id}/stop",
+            HTTP_AUTHORIZATION="Bearer preview-token",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["preview_id"], self.preview_id)
+        self.assertEqual(payload["status"], PreviewRunnerSession.Status.STOPPED)
+        mock_stop.assert_called_once_with(session)

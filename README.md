@@ -31,6 +31,7 @@ AutoDocker automatiza esa primera capa de trabajo y deja el resultado en un form
 - editor embebido para ajustar artefactos antes de descargarlos
 - historial por usuario y workspaces compartidos
 - validación local o remota de builds
+- preview local con Docker o preview remota vía preview runner dedicado
 - integración con GitHub para abrir PRs con los artefactos generados
 
 ## Demo y capturas
@@ -79,6 +80,7 @@ Ejemplo de cómo quedarían:
 
 - GitHub Actions para validación remota
 - GitHub API para apertura de pull requests
+- preview runner privado para previews remotas efímeras
 
 ## Requisitos previos
 
@@ -99,6 +101,7 @@ Ejemplo de cómo quedarían:
 - Redis
 - bucket privado en Supabase Storage
 - repo executor privado en GitHub Actions
+- host dedicado con Docker si querés previews remotas públicas
 
 ## Instalación
 
@@ -269,6 +272,7 @@ El proyecto trae varias plantillas:
 - `.env.example` para desarrollo simple con `manage.py`
 - `.env.docker.example` para `docker compose`
 - `.env.prod.example` para producción
+- `.env.runner.example` para el host dedicado del preview runner
 
 ### Variables mínimas para desarrollo local
 
@@ -279,6 +283,7 @@ El proyecto trae varias plantillas:
 | `DJANGO_USE_SQLITE` | permite usar SQLite en desarrollo |
 | `DJANGO_ALLOWED_HOSTS` | hosts permitidos |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | orígenes confiables para CSRF |
+| `AUTODOCKER_DEPLOYMENT_ROLE` | `app` o `preview_runner` |
 | `AUTODOCKER_ASYNC_MODE` | `inline`, `thread` o `celery` |
 | `AUTODOCKER_ENABLE_RUNTIME_JOBS` | habilita validación/preview que ejecutan runtime |
 | `AUTODOCKER_TOKEN_ENCRYPTION_KEY` | cifra tokens externos almacenados |
@@ -298,6 +303,11 @@ El proyecto trae varias plantillas:
 | `DJANGO_SECURE_HSTS_SECONDS` | HSTS |
 | `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | HSTS subdominios |
 | `DJANGO_SECURE_HSTS_PRELOAD` | HSTS preload |
+| `AUTODOCKER_VALIDATION_BACKEND` | `local` o `github_actions` |
+| `AUTODOCKER_PREVIEW_BACKEND` | `local` o `remote_runner` |
+| `AUTODOCKER_PREVIEW_RUNNER_BASE_URL` | base URL privada del preview runner |
+| `AUTODOCKER_PREVIEW_RUNNER_TOKEN` | bearer token compartido entre app y runner |
+| `AUTODOCKER_PREVIEW_TTL_SECONDS` | TTL máximo de previews remotas |
 
 ### Variables para storage en Supabase
 
@@ -309,6 +319,17 @@ El proyecto trae varias plantillas:
 | `SUPABASE_STORAGE_ACCESS_KEY_ID` | access key S3 |
 | `SUPABASE_STORAGE_SECRET_ACCESS_KEY` | secret key S3 |
 | `SUPABASE_STORAGE_MEDIA_PATH_PREFIX` | prefijo opcional dentro del bucket |
+
+### Modo preview runner
+
+Para correr el host dedicado del runner con este mismo código:
+
+1. Copiá `.env.runner.example` a `.env.runner`.
+2. Configurá `AUTODOCKER_DEPLOYMENT_ROLE=preview_runner`.
+3. Asegurá acceso real a Docker en ese host.
+4. Levantá Django con ese archivo de entorno; el servicio expone la API privada `POST /previews`, `GET /previews/{id}`, `GET /previews/{id}/logs` y `POST /previews/{id}/stop`.
+
+En ese host el backend de preview debe quedar en `local`; el backend `remote_runner` se usa del lado de la app principal para delegar previews al runner dedicado.
 
 ### Variables para validación remota con GitHub Actions
 

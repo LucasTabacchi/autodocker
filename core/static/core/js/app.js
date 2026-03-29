@@ -219,8 +219,11 @@
             if (capability.backend === "github_actions") {
                 return "Disponible vía GitHub Actions.";
             }
-            if (capability.backend === "docker") {
+            if (capability.backend === "docker" || capability.backend === "local") {
                 return "Disponible usando el Docker host configurado.";
+            }
+            if (capability.backend === "remote_runner") {
+                return "Disponible vía preview runner remoto.";
             }
             return fallback;
         }

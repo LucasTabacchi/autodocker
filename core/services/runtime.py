@@ -86,6 +86,10 @@ def validation_backend_name() -> str:
     return (getattr(settings, "AUTODOCKER_VALIDATION_BACKEND", "local") or "local").strip().lower()
 
 
+def preview_backend_name() -> str:
+    return (getattr(settings, "AUTODOCKER_PREVIEW_BACKEND", "local") or "local").strip().lower()
+
+
 def validation_runtime_capability() -> dict[str, str | bool]:
     backend = validation_backend_name()
     if backend == "github_actions":
@@ -113,19 +117,51 @@ def validation_runtime_capability() -> dict[str, str | bool]:
 
 
 def preview_runtime_capability() -> dict[str, str | bool]:
+    backend = preview_backend_name()
+    if backend == "remote_runner":
+        missing_settings = []
+        if not (getattr(settings, "AUTODOCKER_PREVIEW_RUNNER_BASE_URL", "") or "").strip():
+            missing_settings.append("AUTODOCKER_PREVIEW_RUNNER_BASE_URL")
+        if not (getattr(settings, "AUTODOCKER_PREVIEW_RUNNER_TOKEN", "") or "").strip():
+            missing_settings.append("AUTODOCKER_PREVIEW_RUNNER_TOKEN")
+        if missing_settings:
+            return {
+                "enabled": False,
+                "backend": backend,
+                "reason": (
+                    "La preview remota requiere configurar "
+                    + ", ".join(missing_settings)
+                    + "."
+                ),
+            }
+        return {
+            "enabled": True,
+            "backend": backend,
+            "reason": "",
+        }
+
+    if backend not in {"local", "docker"}:
+        return {
+            "enabled": False,
+            "backend": backend,
+            "reason": (
+                "AUTODOCKER_PREVIEW_BACKEND debe ser `local` o `remote_runner`."
+            ),
+        }
+
     try:
         ensure_runtime_jobs_enabled("La preview ejecutable")
         ensure_docker_runtime_access("La preview ejecutable")
     except CommandExecutionError as exc:
         return {
             "enabled": False,
-            "backend": "docker",
+            "backend": backend,
             "reason": str(exc),
         }
 
     return {
         "enabled": True,
-        "backend": "docker",
+        "backend": backend,
         "reason": "",
     }
 

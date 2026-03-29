@@ -40,7 +40,13 @@ from core.services.ingestion import cleanup_workspace, prepare_source_workspace
 from core.services.validation_bundle import ValidationBundleService
 from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
-from core.services.runtime import CommandExecutionError, docker_compose_command
+from core.services.preview_bundle import PreviewBundleService
+from core.services.preview_runner import PreviewRunnerClient, PreviewRunnerError
+from core.services.runtime import (
+    CommandExecutionError,
+    docker_compose_command,
+    preview_runtime_capability,
+)
 from core.test_support import AnalysisApiTestSupport
 
 
@@ -121,6 +127,10 @@ class DatabaseConfigTests(SimpleTestCase):
     def test_validation_backend_env_defaults_to_local(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(project_settings.env("AUTODOCKER_VALIDATION_BACKEND", "local"), "local")
+
+    def test_preview_backend_env_defaults_to_local(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(project_settings.env("AUTODOCKER_PREVIEW_BACKEND", "local"), "local")
 
 
 class DeploymentContractTests(SimpleTestCase):
@@ -325,6 +335,48 @@ class RemoteArchiveIngestionTests(SimpleTestCase):
                 self.assertEqual(
                     zipped.read("Dockerfile").decode("utf-8").replace("\r\n", "\n"),
                     "FROM node:22-alpine\nRUN echo remote bundle",
+                )
+                self.assertEqual(
+                    zipped.read("docker-compose.yml").decode("utf-8").replace("\r\n", "\n"),
+                    "services:\n  app:\n    build: .\n",
+                )
+        finally:
+            cleanup_workspace(bundle.workspace_root)
+
+    def test_preview_bundle_service_overlays_generated_artifacts(self):
+        analysis = self._build_ready_git_analysis(
+            files={
+                "package.json": json.dumps(
+                    {
+                        "name": "preview-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                ),
+                "src/server.js": "console.log('preview analysis');",
+            },
+            artifacts=[
+                GeneratedArtifactSpec(
+                    kind="dockerfile",
+                    path="Dockerfile",
+                    content="FROM node:22-alpine\nRUN echo preview bundle",
+                    description="Dockerfile",
+                ),
+                GeneratedArtifactSpec(
+                    kind="compose",
+                    path="docker-compose.yml",
+                    content="services:\n  app:\n    build: .\n",
+                    description="Compose",
+                ),
+            ],
+        )
+
+        bundle = PreviewBundleService().build(analysis)
+        try:
+            with zipfile.ZipFile(bundle.bundle_path) as zipped:
+                self.assertEqual(
+                    zipped.read("Dockerfile").decode("utf-8").replace("\r\n", "\n"),
+                    "FROM node:22-alpine\nRUN echo preview bundle",
                 )
                 self.assertEqual(
                     zipped.read("docker-compose.yml").decode("utf-8").replace("\r\n", "\n"),
@@ -769,6 +821,107 @@ class RuntimeCommandTests(SimpleTestCase):
     def test_raises_when_no_docker_runtime_is_available(self, _mock_which):
         with self.assertRaisesMessage(CommandExecutionError, "No se encontró el binario requerido: docker"):
             docker_compose_command()
+
+
+class PreviewRuntimeCapabilityTests(SimpleTestCase):
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    def test_remote_runner_backend_is_available_without_local_docker_runtime(self):
+        capability = preview_runtime_capability()
+
+        self.assertTrue(capability["enabled"])
+        self.assertEqual(capability["backend"], "remote_runner")
+        self.assertEqual(capability["reason"], "")
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="",
+    )
+    def test_remote_runner_backend_requires_runner_configuration(self):
+        capability = preview_runtime_capability()
+
+        self.assertFalse(capability["enabled"])
+        self.assertEqual(capability["backend"], "remote_runner")
+        self.assertIn("AUTODOCKER_PREVIEW_RUNNER_BASE_URL", capability["reason"])
+        self.assertIn("AUTODOCKER_PREVIEW_RUNNER_TOKEN", capability["reason"])
+
+
+class PreviewRunnerClientTests(SimpleTestCase):
+    class _FakeResponse:
+        def __init__(self, payload: dict):
+            self.payload = json.dumps(payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self.payload
+
+    @override_settings(
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal/",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+        AUTODOCKER_PREVIEW_RUNNER_REQUEST_TIMEOUT=45,
+    )
+    @patch("core.services.preview_runner.request.urlopen")
+    def test_create_preview_posts_expected_payload(self, mock_urlopen):
+        mock_urlopen.return_value = self._FakeResponse(
+            {
+                "preview_id": "preview-123",
+                "status": "starting",
+                "runtime_kind": "compose",
+                "access_url": "",
+                "resource_names": ["prv-demo-web"],
+                "expires_at": "2026-03-29T18:35:00Z",
+            }
+        )
+
+        client = PreviewRunnerClient()
+        response = client.create_preview(
+            preview_id="preview-123",
+            analysis_id="analysis-456",
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            metadata={"generation_profile": "production"},
+        )
+
+        self.assertEqual(response["status"], "starting")
+        request_obj = mock_urlopen.call_args.args[0]
+        self.assertEqual(request_obj.full_url, "https://preview-runner.internal/previews")
+        self.assertEqual(request_obj.get_method(), "POST")
+        self.assertEqual(request_obj.headers["Authorization"], "Bearer preview-token")
+        payload = json.loads(request_obj.data.decode("utf-8"))
+        self.assertEqual(payload["preview_id"], "preview-123")
+        self.assertEqual(payload["analysis_id"], "analysis-456")
+        self.assertEqual(payload["requested_ttl_seconds"], 1800)
+        self.assertEqual(payload["metadata"]["generation_profile"], "production")
+
+    @override_settings(
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview_runner.request.urlopen")
+    def test_stop_preview_raises_controlled_error_on_http_failure(self, mock_urlopen):
+        mock_urlopen.side_effect = error.HTTPError(
+            url="https://preview-runner.internal/previews/preview-123/stop",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=io.BytesIO(b'{"detail":"runner unavailable"}'),
+        )
+
+        with self.assertRaisesMessage(PreviewRunnerError, "runner unavailable"):
+            PreviewRunnerClient().stop_preview("preview-123")
 
 
 class PreviewServiceTests(SimpleTestCase):

@@ -11,18 +11,22 @@ from django.utils import timezone
 
 from core.models import PreviewRun, ProjectAnalysis
 from core.services.ingestion import cleanup_workspace, overlay_generated_artifacts, prepare_source_workspace
+from core.services.remote_preview import RemotePreviewService
 from core.services.runtime import (
     CommandExecutionError,
     docker_command,
     docker_compose_command,
     ensure_docker_runtime_access,
     ensure_runtime_jobs_enabled,
+    preview_backend_name,
     run_command,
 )
 
 
 class PreviewService:
     def start(self, preview_run: PreviewRun) -> PreviewRun:
+        if preview_backend_name() == "remote_runner":
+            return RemotePreviewService().start(preview_run)
         ensure_runtime_jobs_enabled("La preview ejecutable")
         ensure_docker_runtime_access("La preview ejecutable")
         analysis = preview_run.analysis
@@ -45,10 +49,7 @@ class PreviewService:
 
         try:
             overlay_generated_artifacts(source_root, list(analysis.artifacts.all()))
-            if (source_root / "docker-compose.yml").exists():
-                self._start_compose_preview(preview_run, analysis, source_root)
-            else:
-                self._start_single_container_preview(preview_run, source_root)
+            self.start_from_workspace(preview_run, analysis, source_root)
         except Exception as exc:
             preview_run.status = PreviewRun.Status.FAILED
             preview_run.logs = str(exc)
@@ -57,7 +58,21 @@ class PreviewService:
             self._cleanup_workspace(preview_run)
         return preview_run
 
+    def start_from_workspace(
+        self,
+        preview_run,
+        analysis: ProjectAnalysis,
+        source_root: Path,
+    ):
+        if (source_root / "docker-compose.yml").exists():
+            self._start_compose_preview(preview_run, analysis, source_root)
+        else:
+            self._start_single_container_preview(preview_run, source_root)
+        return preview_run
+
     def stop(self, preview_run: PreviewRun) -> PreviewRun:
+        if preview_backend_name() == "remote_runner":
+            return RemotePreviewService().stop(preview_run)
         workspace = Path(preview_run.workspace_path) if preview_run.workspace_path else None
         try:
             if preview_run.runtime_kind == PreviewRun.RuntimeKind.COMPOSE and workspace and workspace.exists():
@@ -84,6 +99,8 @@ class PreviewService:
         return preview_run
 
     def refresh_logs(self, preview_run: PreviewRun) -> PreviewRun:
+        if preview_backend_name() == "remote_runner":
+            return RemotePreviewService().refresh_logs(preview_run)
         workspace = Path(preview_run.workspace_path) if preview_run.workspace_path else None
         if not workspace or not workspace.exists():
             return preview_run

@@ -542,3 +542,51 @@ class PreviewRun(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in {self.Status.QUEUED, self.Status.RUNNING, self.Status.READY}
+
+
+class PreviewRunnerSession(models.Model):
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        STARTING = "starting", "Starting"
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+        STOPPED = "stopped", "Stopped"
+        EXPIRED = "expired", "Expired"
+
+    class RuntimeKind(models.TextChoices):
+        COMPOSE = "compose", "Compose"
+        CONTAINER = "container", "Container"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    preview_id = models.UUIDField(unique=True, db_index=True)
+    analysis_id = models.UUIDField()
+    project_name = models.CharField(max_length=255)
+    bundle_url = models.URLField()
+    bundle_sha256 = models.CharField(max_length=64)
+    requested_ttl_seconds = models.PositiveIntegerField(default=1800)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_index=True,
+    )
+    runtime_kind = models.CharField(max_length=16, choices=RuntimeKind.choices, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    workspace_path = models.CharField(max_length=1024, blank=True)
+    workspace_root = models.CharField(max_length=1024, blank=True)
+    command = models.CharField(max_length=512, blank=True)
+    access_url = models.URLField(blank=True)
+    ports = models.JSONField(default=dict, blank=True)
+    resource_names = models.JSONField(default=list, blank=True)
+    logs = models.TextField(blank=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.preview_id}:{self.status}"
