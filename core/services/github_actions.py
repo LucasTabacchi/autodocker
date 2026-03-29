@@ -112,7 +112,12 @@ class GitHubActionsClient:
                     "success": run.get("conclusion") == "success" and bool(artifacts.get("success")),
                     "summary": artifacts.get("summary", ""),
                     "command": artifacts.get("command", []),
-                    "logs": artifacts.get("logs", ""),
+                    "logs": self._format_validation_logs(
+                        summary=artifacts.get("summary", ""),
+                        command=artifacts.get("command", []),
+                        duration_seconds=artifacts.get("duration_seconds", 0),
+                        raw_logs=artifacts.get("logs", ""),
+                    ),
                     "duration_seconds": artifacts.get("duration_seconds", 0),
                     "artifact_urls": {
                         "workflow_run": run.get("html_url", ""),
@@ -158,6 +163,29 @@ class GitHubActionsClient:
             if log_name:
                 result["logs"] = zipped.read(log_name).decode("utf-8")
             return result
+
+    def _format_validation_logs(
+        self,
+        *,
+        summary: str,
+        command: list[str],
+        duration_seconds: int,
+        raw_logs: str,
+    ) -> str:
+        lines: list[str] = []
+        if summary:
+            lines.append(f"Summary: {summary}")
+        if command:
+            lines.append(f"Command: {' '.join(command)}")
+        if duration_seconds:
+            lines.append(f"Duration: {duration_seconds}s")
+
+        raw = (raw_logs or "").strip()
+        if raw:
+            if lines:
+                lines.append("")
+            lines.append(raw)
+        return "\n".join(lines).strip()
 
     def _request(self, method: str, path: str, body: dict | None = None) -> dict:
         req = request.Request(

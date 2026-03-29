@@ -39,17 +39,89 @@ jobs:
       - name: Run validation
         working-directory: bundle
         run: |
+          set -uo pipefail
+          start_ts=$(date +%s)
+          : > validation.log
+
+          run_and_capture() {
+            local label="$1"
+            shift
+            {
+              printf '==> %s\n' "$label"
+            } >> validation.log
+            "$@" 2>&1 | tee -a validation.log
+            return ${PIPESTATUS[0]}
+          }
+
+          success=true
+          summary=""
+          command_display=""
+          command_json="[]"
+          exit_code=0
+
           if [ -f docker-compose.yml ]; then
-            docker compose -f docker-compose.yml config
-            docker compose -f docker-compose.yml build
-            printf '%s\n' '{"success":true,"summary":"docker compose build completed successfully","command":["docker","compose","-f","docker-compose.yml","build"],"duration_seconds":0}' > result.json
+            command_display="docker compose -f docker-compose.yml build"
+            command_json='["docker","compose","-f","docker-compose.yml","build"]'
+
+            if ! run_and_capture "docker compose -f docker-compose.yml config" docker compose -f docker-compose.yml config; then
+              success=false
+              summary="docker compose config failed"
+              exit_code=1
+            elif ! run_and_capture "$command_display" docker compose -f docker-compose.yml build; then
+              success=false
+              summary="docker compose build failed"
+              exit_code=1
+            else
+              summary="docker compose build completed successfully"
+            fi
           else
-            docker build -t autodocker-validate .
-            printf '%s\n' '{"success":true,"summary":"docker build completed successfully","command":["docker","build","-t","autodocker-validate","."],"duration_seconds":0}' > result.json
+            command_display="docker build -t autodocker-validate ."
+            command_json='["docker","build","-t","autodocker-validate","."]'
+
+            if ! run_and_capture "$command_display" docker build -t autodocker-validate .; then
+              success=false
+              summary="docker build failed"
+              exit_code=1
+            else
+              summary="docker build completed successfully"
+            fi
           fi
-          printf '%s\n' "validation complete" > validation.log
+
+          duration=$(( $(date +%s) - start_ts ))
+          {
+            printf '\n==> Result\n'
+            printf 'Summary: %s\n' "$summary"
+            printf 'Command: %s\n' "$command_display"
+            printf 'Duration: %ss\n' "$duration"
+            printf 'Success: %s\n' "$success"
+          } >> validation.log
+
+          VALIDATION_SUCCESS="$success" \
+          VALIDATION_SUMMARY="$summary" \
+          VALIDATION_COMMAND_JSON="$command_json" \
+          VALIDATION_DURATION="$duration" \
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          Path("result.json").write_text(
+              json.dumps(
+                  {
+                      "success": os.environ["VALIDATION_SUCCESS"] == "true",
+                      "summary": os.environ["VALIDATION_SUMMARY"],
+                      "command": json.loads(os.environ["VALIDATION_COMMAND_JSON"]),
+                      "duration_seconds": int(os.environ["VALIDATION_DURATION"]),
+                  }
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+          exit "$exit_code"
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: validation-results

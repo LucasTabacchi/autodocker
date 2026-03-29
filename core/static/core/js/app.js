@@ -1115,7 +1115,11 @@
                 return;
             }
 
-            elements.validationSummary.textContent = `${labelStatus(job.status)} · ${job.label || "Validación"}`;
+            const summarySuffix = job.result_payload?.summary
+                ? ` · ${job.result_payload.summary}`
+                : "";
+            elements.validationSummary.textContent =
+                `${labelStatus(job.status)} · ${job.label || "Validación"}${summarySuffix}`;
             elements.validationLogs.textContent =
                 job.logs || formatJson(job.result_payload) || "Todavía no hay logs de validación.";
 

@@ -1545,6 +1545,49 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(run["workflow_run_id"], 456)
         self.assertEqual(run["workflow_run_url"], "https://github.com/acme/executor/actions/runs/456")
 
+    @patch("core.services.github_actions.GitHubActionsClient.download_result_artifacts")
+    @patch("core.services.github_actions.GitHubActionsClient._request")
+    def test_github_actions_client_wait_for_completion_formats_summary_command_and_logs(
+        self,
+        mock_request,
+        mock_download_result_artifacts,
+    ):
+        mock_request.return_value = {
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "https://github.com/acme/executor/actions/runs/123",
+        }
+        mock_download_result_artifacts.return_value = {
+            "success": True,
+            "summary": "docker compose build completed successfully",
+            "command": ["docker", "compose", "-f", "docker-compose.yml", "build"],
+            "logs": "STEP 1/8\nSTEP 2/8\nDONE",
+            "duration_seconds": 14,
+        }
+
+        result = GitHubActionsClient(
+            token="token",
+            repo="LucasTabacchi/autodocker-validator",
+            workflow="validate.yml",
+        ).wait_for_completion(workflow_run_id=123, timeout_seconds=1)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["summary"], "docker compose build completed successfully")
+        self.assertEqual(
+            result["logs"],
+            "\n".join(
+                [
+                    "Summary: docker compose build completed successfully",
+                    "Command: docker compose -f docker-compose.yml build",
+                    "Duration: 14s",
+                    "",
+                    "STEP 1/8",
+                    "STEP 2/8",
+                    "DONE",
+                ]
+            ),
+        )
+
     @override_settings(
         AUTODOCKER_ENABLE_RUNTIME_JOBS=True,
         AUTODOCKER_VALIDATION_BACKEND="github_actions",
