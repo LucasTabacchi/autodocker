@@ -1,5 +1,7 @@
 name: AutoDocker validation executor
 
+run-name: Validate ${{ inputs.job_id }}
+
 on:
   workflow_dispatch:
     inputs:

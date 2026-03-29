@@ -54,19 +54,39 @@ class GitHubActionsClient:
             "workflow_run_url": run["workflow_run_url"],
         }
 
-    def find_workflow_run(self, job_id: str) -> dict:
-        payload = self._request(
-            "GET",
-            f"/repos/{self.repo}/actions/workflows/{self.workflow}/runs?per_page=1&event=workflow_dispatch",
-        )
-        runs = payload.get("workflow_runs") or []
-        if not runs:
-            raise GitHubActionsError(f"No se encontró un workflow run para el job {job_id}.")
-        run = runs[0]
-        return {
-            "workflow_run_id": run["id"],
-            "workflow_run_url": run.get("html_url", ""),
-        }
+    def find_workflow_run(
+        self,
+        job_id: str,
+        *,
+        timeout_seconds: int = 60,
+        poll_interval_seconds: int = 2,
+    ) -> dict:
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            payload = self._request(
+                "GET",
+                f"/repos/{self.repo}/actions/workflows/{self.workflow}/runs?per_page=20&event=workflow_dispatch",
+            )
+            runs = payload.get("workflow_runs") or []
+            for run in runs:
+                haystack = " ".join(
+                    str(value)
+                    for value in [
+                        run.get("display_title", ""),
+                        run.get("name", ""),
+                        run.get("head_branch", ""),
+                    ]
+                    if value
+                )
+                if job_id and job_id not in haystack and job_id not in json.dumps(run):
+                    continue
+                return {
+                    "workflow_run_id": run["id"],
+                    "workflow_run_url": run.get("html_url", ""),
+                }
+            if time.monotonic() >= deadline:
+                raise GitHubActionsError(f"No se encontró un workflow run para el job {job_id}.")
+            time.sleep(poll_interval_seconds)
 
     def wait_for_completion(
         self,

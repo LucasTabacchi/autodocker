@@ -1479,6 +1479,35 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(result["duration_seconds"], 12)
         self.assertEqual(result["logs"], "remote logs")
 
+    @patch("core.services.github_actions.time.sleep")
+    @patch("core.services.github_actions.GitHubActionsClient._request")
+    def test_github_actions_client_retries_until_dispatched_run_is_visible(
+        self,
+        mock_request,
+        _mock_sleep,
+    ):
+        mock_request.side_effect = [
+            {},
+            {
+                "workflow_runs": [
+                    {
+                        "id": 456,
+                        "html_url": "https://github.com/acme/executor/actions/runs/456",
+                        "display_title": "Validate 9567099c-23ff-4adb-93e3-f49c26296f5b",
+                    }
+                ]
+            },
+        ]
+
+        run = GitHubActionsClient(
+            token="token",
+            repo="LucasTabacchi/autodocker-validator",
+            workflow="validate.yml",
+        ).find_workflow_run("9567099c-23ff-4adb-93e3-f49c26296f5b", timeout_seconds=1)
+
+        self.assertEqual(run["workflow_run_id"], 456)
+        self.assertEqual(run["workflow_run_url"], "https://github.com/acme/executor/actions/runs/456")
+
     @override_settings(
         AUTODOCKER_ENABLE_RUNTIME_JOBS=True,
         AUTODOCKER_VALIDATION_BACKEND="github_actions",
