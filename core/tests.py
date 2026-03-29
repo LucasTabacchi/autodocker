@@ -28,7 +28,7 @@ from core.models import (
     WorkspaceMembership,
 )
 from core.crypto import TOKEN_PREFIX
-from core.services.build_validation import BuildValidationResult, BuildValidationService
+from core.services.build_validation import BuildValidationResult, BuildValidationService, RemoteValidationService
 from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
 from core.services.github_pr import GitHubPullRequestResult
@@ -1352,6 +1352,73 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
 
         self.assertEqual(result.result_payload["executor"], "github_actions")
         self.assertEqual(result.metadata["workflow_run_id"], 123)
+
+    @patch("core.services.github_actions.GitHubActionsClient.dispatch_validation")
+    @patch("core.services.github_actions.GitHubActionsClient.wait_for_completion")
+    @patch("core.services.build_validation.ValidationBundleService.build")
+    @patch("django.core.files.storage.default_storage.url")
+    @patch("django.core.files.storage.default_storage.save")
+    def test_remote_validation_service_dispatches_and_normalizes_remote_result(
+        self,
+        mock_storage_save,
+        mock_storage_url,
+        mock_build_bundle,
+        mock_wait_for_completion,
+        mock_dispatch_validation,
+    ):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="remote-demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        job = ExecutionJob.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.VALIDATION,
+        )
+
+        bundle_root = Path(tempfile.mkdtemp(prefix="autodocker-test-"))
+        self.addCleanup(cleanup_workspace, bundle_root)
+        (bundle_root / "validation-bundle.zip").write_bytes(b"fake bundle")
+        mock_build_bundle.return_value = SimpleNamespace(
+            workspace_root=bundle_root,
+            bundle_path=bundle_root / "validation-bundle.zip",
+            sha256="a" * 64,
+            bundle_size_bytes=1234,
+        )
+        mock_storage_save.return_value = "validation-bundles/job-123/bundle.zip"
+        mock_storage_url.return_value = "https://storage.example/validation-bundles/job-123/bundle.zip"
+
+        mock_dispatch_validation.return_value = {
+            "workflow_run_id": 123,
+            "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+        }
+        mock_wait_for_completion.return_value = {
+            "success": True,
+            "summary": "docker build completed successfully",
+            "command": ["docker", "build", "-t", "autodocker-validate", "."],
+            "logs": "remote ok",
+            "duration_seconds": 86,
+            "artifact_urls": {
+                "workflow_run": "https://github.com/acme/executor/actions/runs/123",
+            },
+        }
+
+        result = RemoteValidationService().validate(job)
+
+        self.assertEqual(result.metadata["validation_backend"], "github_actions")
+        self.assertEqual(result.metadata["workflow_run_id"], 123)
+        self.assertEqual(result.metadata["workflow_run_url"], "https://github.com/acme/executor/actions/runs/123")
+        self.assertEqual(result.metadata["bundle_sha256"], "a" * 64)
+        self.assertEqual(result.result_payload["executor"], "github_actions")
+        self.assertEqual(result.result_payload["artifact_urls"]["workflow_run"], "https://github.com/acme/executor/actions/runs/123")
+        mock_build_bundle.assert_called_once()
+        mock_storage_save.assert_called_once()
+        mock_storage_url.assert_called_once()
+        mock_dispatch_validation.assert_called_once()
+        mock_wait_for_completion.assert_called_once()
 
     @patch(
         "core.services.execution_runner.BuildValidationService.validate",

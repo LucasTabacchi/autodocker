@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
+from django.core.files.base import File
+from django.core.files.storage import default_storage
 from django.conf import settings
 
-from core.models import ProjectAnalysis
+from core.models import ExecutionJob, ProjectAnalysis
+from core.services.github_actions import GitHubActionsClient
 from core.services.ingestion import (
     cleanup_workspace,
     overlay_generated_artifacts,
     prepare_source_workspace,
 )
+from core.services.validation_bundle import ValidationBundleService
 from core.services.runtime import (
     CommandExecutionError,
     docker_command,
@@ -86,3 +90,49 @@ class BuildValidationService:
             )
         finally:
             cleanup_workspace(temp_dir)
+
+
+class RemoteValidationService:
+    def validate(self, job: ExecutionJob) -> BuildValidationResult:
+        if not job.analysis:
+            raise ValueError("El job de validación no tiene análisis asociado.")
+
+        bundle = ValidationBundleService().build(job.analysis)
+        try:
+            bundle_key = self._bundle_storage_key(job)
+            with bundle.bundle_path.open("rb") as bundle_stream:
+                saved_key = default_storage.save(bundle_key, File(bundle_stream, name=bundle.bundle_path.name))
+            bundle_url = default_storage.url(saved_key)
+            client = GitHubActionsClient()
+            dispatch = client.dispatch_validation(
+                job_id=str(job.id),
+                bundle_url=bundle_url,
+                bundle_sha256=bundle.sha256,
+                analysis_id=str(job.analysis_id),
+            )
+            completion = client.wait_for_completion(dispatch["workflow_run_id"])
+            return BuildValidationResult(
+                success=completion["success"],
+                command=completion["command"],
+                logs=completion["logs"],
+                image_tag="",
+                metadata={
+                    "validation_backend": "github_actions",
+                    "workflow_run_id": dispatch["workflow_run_id"],
+                    "workflow_run_url": dispatch["workflow_run_url"],
+                    "bundle_sha256": bundle.sha256,
+                },
+                result_payload={
+                    "executor": "github_actions",
+                    "summary": completion["summary"],
+                    "artifact_urls": {
+                        "workflow_run": dispatch["workflow_run_url"],
+                    },
+                    "duration_seconds": completion["duration_seconds"],
+                },
+            )
+        finally:
+            cleanup_workspace(bundle.workspace_root)
+
+    def _bundle_storage_key(self, job: ExecutionJob) -> str:
+        return f"validation-bundles/{str(job.id)}/bundle.zip"
