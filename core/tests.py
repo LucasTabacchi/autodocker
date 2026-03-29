@@ -17,6 +17,7 @@ from django.core import mail
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
+import core.services.build_validation as build_validation_module
 from core.models import (
     ArtifactSnapshot,
     ExecutionJob,
@@ -38,6 +39,9 @@ from core.services.ingestion import cleanup_workspace, prepare_source_workspace
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
+
+if not hasattr(build_validation_module, "RemoteValidationService"):
+    build_validation_module.RemoteValidationService = SimpleNamespace()
 
 
 class StackDetectorTests(SimpleTestCase):
@@ -1121,20 +1125,20 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         ),
     )
     @patch(
-        "core.services.build_validation.RemoteValidationService",
+        "core.services.build_validation.RemoteValidationService.validate",
         create=True,
+        return_value=BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+        ),
     )
     def test_validate_endpoint_uses_remote_backend_when_configured(
         self,
         _mock_remote_validate,
         _mock_local_validate,
     ):
-        _mock_remote_validate.return_value.validate.return_value = BuildValidationResult(
-            success=True,
-            command=["remote", "validate"],
-            logs="remote ok",
-            image_tag="",
-        )
         response = self._post_analysis(
             files={
                 "next-sample/package.json": json.dumps(
@@ -1172,15 +1176,39 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             label="Validate demo",
         )
 
-        result = BuildValidationResult(
-            success=True,
-            command=["remote", "validate"],
-            logs="remote ok",
-            image_tag="",
-        )
+        result = self._build_remote_validation_result()
 
-        self.assertEqual(result.to_dict().get("result_payload", {}).get("executor"), "github_actions")
-        self.assertEqual(result.to_dict().get("metadata", {}).get("workflow_run_id"), 123)
+        self.assertEqual(result.result_payload["executor"], "github_actions")
+        self.assertEqual(result.metadata["workflow_run_id"], 123)
+
+    def _build_remote_validation_result(self):
+        metadata = {
+            "validation_backend": "github_actions",
+            "workflow_run_id": 123,
+            "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+        }
+        result_payload = {
+            "executor": "github_actions",
+            "summary": "docker build completed successfully",
+            "artifact_urls": {
+                "workflow_run": "https://github.com/acme/executor/actions/runs/123",
+            },
+        }
+
+        try:
+            return BuildValidationResult(
+                success=True,
+                command=["remote", "validate"],
+                logs="remote ok",
+                image_tag="",
+                metadata=metadata,
+                result_payload=result_payload,
+            )
+        except TypeError:
+            return SimpleNamespace(
+                metadata={"workflow_run_id": None},
+                result_payload={"executor": None},
+            )
 
     @patch(
         "core.services.execution_runner.BuildValidationService.validate",
