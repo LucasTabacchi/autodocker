@@ -1,266 +1,369 @@
 # AutoDocker
 
-## 1. Resumen de la idea
-AutoDocker es un SaaS para developers que recibe un `.zip` o una URL Git, detecta el stack técnico del proyecto y genera artefactos Docker editables antes de exportarlos. El foco del MVP es acelerar la dockerización sin obligar al usuario a conocer todos los matices de cada stack.
+![Build](https://img.shields.io/badge/build-passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.1.0-blue)
+![License](https://img.shields.io/badge/license-pending-lightgrey)
 
-## 2. Arquitectura general de la app
-- Monolito Django 5 con DRF para la API y templates server-rendered para la UI.
-- Capa de dominio separada en servicios: ingestión, detección, generación, validación y scheduling.
-- Persistencia de historial y artefactos generados en base de datos.
-- Exportación ZIP desde backend con los archivos ya editados por el usuario.
-- Procesamiento asíncrono por worker con Celery o fallback thread en desarrollo local.
+AutoDocker es una web app con API para desarrolladores que analiza un proyecto a partir de un `.zip` o una URL Git, detecta su stack técnico y genera artefactos Docker editables antes de exportarlos o validarlos. El objetivo es reducir el tiempo necesario para dockerizar aplicaciones reales sin obligar al usuario a resolver manualmente cada detalle de runtime, puertos, servicios auxiliares y pipelines base.
 
-## 3. Tecnologías recomendadas
-- Backend y frontend inicial: Django 5 + DRF + templates + JS.
-- Editor embebido: Monaco cargado por CDN.
-- Base de datos: SQLite para tests y local mínimo, PostgreSQL para Docker y producción.
-- Jobs asíncronos: Celery + Redis.
-- Static files y runtime web: WhiteNoise + Gunicorn.
+**Tipo de proyecto:** web app + API  
+**Audiencia:** desarrolladores  
+**Tecnologías principales:** Python, Django, Django REST Framework, Celery, Redis, PostgreSQL, Docker, JavaScript, Monaco Editor, Supabase Storage, GitHub Actions
 
-## 4. Estructura de carpetas del proyecto
-```text
-autodocker/
-├── config/
-├── core/
-│   ├── api/
-│   ├── services/
-│   ├── static/core/
-│   ├── templates/core/
-│   ├── forms.py
-│   ├── models.py
-│   └── views.py
-├── manage.py
-└── requirements.txt
+## Motivación
+
+Dockerizar proyectos reales suele implicar mucho trabajo repetitivo:
+
+- detectar framework, runtime y comandos de arranque
+- decidir cómo separar build y runtime
+- generar `Dockerfile`, `.dockerignore` y `docker-compose.yml`
+- contemplar servicios auxiliares como Postgres o Redis
+- agregar una validación reproducible antes de exportar
+
+AutoDocker automatiza esa primera capa de trabajo y deja el resultado en un formato editable para que el developer conserve control sobre la configuración final.
+
+## Características
+
+- análisis por archivo `.zip` o repositorio Git
+- detección heurística de stacks como Node.js, Python, PHP, Java, Go y Ruby
+- soporte para monorepos y componentes múltiples
+- generación de `Dockerfile`, `.dockerignore`, `docker-compose.yml`, guía de uso y bootstrap de CI/deploy
+- editor embebido para ajustar artefactos antes de descargarlos
+- historial por usuario y workspaces compartidos
+- validación local o remota de builds
+- integración con GitHub para abrir PRs con los artefactos generados
+
+## Demo y capturas
+
+**Demo web actual:** `https://autodocker-web.onrender.com`
+
+Si todavía no tenés assets visuales definitivos, podés usar estos placeholders en el repo:
+
+- `docs/assets/dashboard.png`
+- `docs/assets/editor.png`
+- `docs/assets/validation.png`
+
+Ejemplo de cómo quedarían:
+
+```md
+![Dashboard](docs/assets/dashboard.png)
+![Editor de artefactos](docs/assets/editor.png)
+![Validación remota](docs/assets/validation.png)
 ```
 
-## 5. Flujo completo del usuario
-1. El usuario inicia sesión con auth de Django.
-2. Sube un `.zip` o pega una URL Git.
-3. La API crea un análisis en estado `queued`.
-4. Un worker procesa la fuente, detecta framework, lenguaje, puertos y servicios auxiliares.
-5. El generador crea Dockerfile, `.dockerignore`, `docker-compose.yml` y guía.
-6. La UI hace polling, muestra el resumen y habilita Monaco cuando los artefactos están listos.
-7. El usuario guarda cambios, regenera o descarga un ZIP final.
+## Tecnologías usadas
 
-## 6. Lógica de detección de stack
-- Node.js: lectura de `package.json`, `scripts`, lockfiles y dependencias.
-- Python: `requirements.txt`, `pyproject.toml`, `manage.py`.
-- PHP: `composer.json`, `artisan`.
-- Java: `pom.xml`.
-- Go: `go.mod`.
-- Ruby: `Gemfile`.
-- Monorepos: `workspaces`, `apps/*`, `packages/*`, `services/*`, `pnpm-workspace.yaml`, `turbo.json`, `nx.json`.
-- Variables de entorno: regex sobre código y `.env`.
-- Puertos: regex sobre listeners/CLI más defaults por framework.
-- Servicios auxiliares: heurísticas sobre dependencias y nombres de variables.
+### Backend
 
-## 7. Lógica de generación de Dockerfile y docker-compose
-- Next.js: multi-stage en Node.
-- React/Vite: build stage y runtime sobre nginx.
-- Express/Nest: Node runtime con instalación productiva.
-- Django/FastAPI/Flask: Python slim con arranque detectado.
-- Laravel, Java, Go, Rails: plantillas de producción iniciales.
-- Compose se genera cuando hay varios componentes o servicios auxiliares.
+- Python 3.13
+- Django 5
+- Django REST Framework
+- Celery
+- Gunicorn
+- WhiteNoise
 
-## 8. Base de datos necesaria
-- `ProjectAnalysis`: historial del análisis, owner, job id, estados de ejecución, resumen detectado, errores, recomendaciones y payload completo.
-- `GeneratedArtifact`: archivos generados y editables asociados al análisis.
+### Infraestructura y storage
 
-## 9. Endpoints API necesarios
+- PostgreSQL
+- Redis
+- Docker y Docker Compose
+- Supabase Storage con compatibilidad S3
+
+### Frontend
+
+- Templates server-rendered de Django
+- JavaScript vanilla
+- Monaco Editor vía CDN
+
+### Integraciones
+
+- GitHub Actions para validación remota
+- GitHub API para apertura de pull requests
+
+## Requisitos previos
+
+### Desarrollo mínimo local
+
+- Python 3.13
+- `pip`
+- virtualenv o `python -m venv`
+
+### Desarrollo con stack completo
+
+- Docker
+- Docker Compose
+
+### Producción o validación remota
+
+- PostgreSQL
+- Redis
+- bucket privado en Supabase Storage
+- repo executor privado en GitHub Actions
+
+## Instalación
+
+### Opción 1: desarrollo local con Python
+
+1. Cloná el repositorio.
+
+```bash
+git clone https://github.com/LucasTabacchi/autodocker.git
+cd autodocker
+```
+
+2. Creá y activá el entorno virtual.
+
+```bash
+python -m venv .venv
+```
+
+En Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+En macOS/Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+3. Instalá dependencias.
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Creá tu archivo de entorno local.
+
+```bash
+copy .env.example .env
+```
+
+5. Aplicá migraciones.
+
+```bash
+python manage.py migrate
+```
+
+6. Creá un superusuario.
+
+```bash
+python manage.py createsuperuser
+```
+
+7. Levantá el servidor.
+
+```bash
+python manage.py runserver
+```
+
+8. Abrí la app en `http://127.0.0.1:8000`.
+
+### Opción 2: desarrollo con Docker Compose
+
+1. Creá el archivo de entorno para Docker.
+
+```bash
+copy .env.docker.example .env.docker
+```
+
+2. Levantá el stack.
+
+```bash
+docker compose up --build
+```
+
+3. Creá un superusuario dentro del contenedor web.
+
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+
+4. Accedé a `http://127.0.0.1:8000`.
+
+## Uso
+
+### Flujo principal desde la UI
+
+1. Iniciá sesión.
+2. Subí un `.zip` o pegá una URL Git.
+3. Esperá a que termine el análisis.
+4. Revisá y editá los artefactos generados.
+5. Elegí entre descargar, regenerar, validar o abrir un PR.
+
+### Ejemplo de creación de análisis desde la API
+
+La API requiere sesión autenticada. Un ejemplo desde el navegador o desde un cliente que ya tenga la cookie de sesión:
+
+```js
+const formData = new FormData();
+formData.append("project_name", "demo-repo");
+formData.append("repository_url", "https://github.com/acme/demo");
+formData.append("generation_profile", "production");
+
+const response = await fetch("/api/analyses/", {
+  method: "POST",
+  body: formData,
+  credentials: "same-origin",
+});
+
+const analysis = await response.json();
+console.log(analysis.id, analysis.status);
+```
+
+### Ejemplo de validación de un análisis existente
+
+```js
+const response = await fetch(`/api/analyses/${analysisId}/validate/`, {
+  method: "POST",
+  credentials: "same-origin",
+});
+
+const job = await response.json();
+console.log(job.id, job.status);
+```
+
+### Endpoints principales
+
 - `GET /api/analyses/`
 - `POST /api/analyses/`
 - `GET /api/analyses/{id}/`
 - `POST /api/analyses/{id}/regenerate/`
+- `POST /api/analyses/{id}/validate/`
+- `POST /api/analyses/{id}/github-pr/`
 - `GET /api/analyses/{id}/download/`
 - `PATCH /api/artifacts/{id}/`
+- `GET /api/jobs/{id}/`
 
-## 10. Diseño de la interfaz
-- Estética industrial/minimalista con tipografía técnica.
-- Layout en dos columnas: workspace principal + historial.
-- Resumen con métricas, recomendaciones, tabs de artefactos y editor Monaco.
-- Pensado para developers: foco en lectura rápida, paths y comandos.
+## Estructura del proyecto
 
-## 11. MVP inicial
-- Login, historial por usuario y permisos básicos.
-- Alta por `.zip` o Git.
-- Detección heurística real para stacks principales y monorepos simples.
-- Generación de Dockerfile, `.dockerignore`, compose y guía.
-- Jobs en background.
-- Edición en Monaco y descarga.
-
-## 12. Funcionalidades futuras
-- Multi-tenant real y workspaces por organización.
-- Plantillas de despliegue para Railway, Render, ECS y Kubernetes.
-- Validación avanzada de seguridad Docker.
-- Diff inteligente contra Dockerfiles existentes.
-
-## 13. Código inicial base del proyecto
-- Modelos en `core/models.py`.
-- Servicios de dominio en `core/services/`.
-- API en `core/api/`.
-- UI inicial en `core/templates/core/dashboard.html` y `core/static/core/`.
-
-## 14. Ejemplo de implementación real de generación de Dockerfile
-La implementación está en `core/services/generator.py`. Ahí se construyen variantes específicas para Next.js, React/Vite, Python, Laravel, Java, Go y Rails usando plantillas reales, no pseudocódigo.
-
-## 15. Recomendaciones de seguridad y performance
-- Validar zips contra path traversal.
-- No ejecutar código del repositorio analizado.
-- Limitar tamaño y profundidad del escaneo.
-- Persistir solo metadata necesaria.
-- Mantener análisis pesados en workers.
-- En producción usar PostgreSQL, Redis, storage externo y rate limiting.
-- Activar `DJANGO_SECURE_SSL_REDIRECT`, `CSRF_COOKIE_SECURE`, `SESSION_COOKIE_SECURE` y revisar HSTS en entorno real.
-
-## Levantar la app
-### Local con Python
-```bash
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py createsuperuser
-.\.venv\Scripts\python.exe manage.py runserver
+```text
+autodocker/
+├── config/                     # settings, urls, wsgi, celery
+├── core/
+│   ├── api/                    # endpoints DRF y serializers
+│   ├── services/               # detección, generación, validación, preview, GitHub, workspaces
+│   ├── static/core/            # JS y assets del dashboard
+│   ├── templates/core/         # templates server-rendered
+│   ├── forms.py
+│   ├── models.py
+│   ├── tests.py
+│   └── views.py
+├── docker/                     # scripts y soporte de runtime
+├── docs/                       # documentación operativa y ejemplos
+├── scripts/                    # utilidades auxiliares
+├── manage.py
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── render.yaml
+└── requirements.txt
 ```
 
-### Local con Docker
-```bash
-cp .env.docker.example .env.docker
-docker compose up --build
-docker compose exec web python manage.py createsuperuser
-```
+## Variables de entorno
 
-### Entornos incluidos
-- `.env`: archivo local real para desarrollo simple con `manage.py`. Django lo carga automáticamente.
-- `.env.example`: plantilla base para crear o reconstruir tu `.env` local.
-- `.env.docker.example`: plantilla para crear `.env.docker` en desarrollo con `docker compose`.
-- `.env.prod.example`: plantilla para crear `.env.prod` en producción o con `docker-compose.prod.yml`.
-- `AUTODOCKER_ENABLE_RUNTIME_JOBS`: habilita preview/validación que construyen o ejecutan contenedores.
-- `AUTODOCKER_TOKEN_ENCRYPTION_KEY`: clave separada para proteger tokens externos almacenados.
-- `SUPABASE_STORAGE_*`: habilitan storage remoto privado para los ZIPs subidos cuando querés evitar `media/` local.
-- `AUTODOCKER_VALIDATION_BACKEND`: elige `local` en desarrollo o `github_actions` para producción.
-- `AUTODOCKER_VALIDATION_EXECUTOR_REPO`, `AUTODOCKER_VALIDATION_EXECUTOR_WORKFLOW`, `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN`: configuran el executor privado de GitHub Actions.
-- `AUTODOCKER_VALIDATION_BUNDLE_TTL_SECONDS` y `AUTODOCKER_VALIDATION_MAX_BUNDLE_MB`: controlan retención y tamaño máximo del bundle de validación.
+El proyecto trae varias plantillas:
 
-### Convención recomendada
-- `manage.py` local: usá `.env`
-- `docker compose`: copiá `.env.docker.example` a `.env.docker`
-- producción / `docker-compose.prod.yml`: copiá `.env.prod.example` a `.env.prod`
-- no uses `.env.prod` ni `.env.docker` como templates versionados; son archivos locales con secretos
+- `.env.example` para desarrollo simple con `manage.py`
+- `.env.docker.example` para `docker compose`
+- `.env.prod.example` para producción
 
-| Si hacés esto | Archivo a usar |
+### Variables mínimas para desarrollo local
+
+| Variable | Descripción |
 | --- | --- |
-| Correr Django local con `manage.py runserver` | `.env` |
-| Reconstruir el entorno local base | `.env.example` |
-| Levantar el stack con `docker compose` | `.env.docker` |
-| Crear el `.env.docker` inicial | `.env.docker.example` |
-| Configurar producción / Supabase / `docker-compose.prod.yml` | `.env.prod` |
-| Crear el `.env.prod` inicial | `.env.prod.example` |
+| `DJANGO_SECRET_KEY` | clave secreta de Django |
+| `DJANGO_DEBUG` | activa modo debug |
+| `DJANGO_USE_SQLITE` | permite usar SQLite en desarrollo |
+| `DJANGO_ALLOWED_HOSTS` | hosts permitidos |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | orígenes confiables para CSRF |
+| `AUTODOCKER_ASYNC_MODE` | `inline`, `thread` o `celery` |
+| `AUTODOCKER_ENABLE_RUNTIME_JOBS` | habilita validación/preview que ejecutan runtime |
+| `AUTODOCKER_TOKEN_ENCRYPTION_KEY` | cifra tokens externos almacenados |
 
-### Validación remota en producción
-- En producción, AutoDocker valida por defecto con `AUTODOCKER_VALIDATION_BACKEND=github_actions`.
-- El backend remoto crea un bundle reproducible, lo sube a storage privado y dispara un workflow en un repo executor privado.
-- El executor no reutiliza el token de PRs; usa `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN` solamente para dispatch, lectura de runs y descarga de artifacts.
-- La implementación esperada del workflow está documentada en [`docs/github-actions/validate.yml.example`](./docs/github-actions/validate.yml.example).
-- El workflow debe leer `job_id`, `analysis_id`, `bundle_url` y `bundle_sha256`, verificar el ZIP, ejecutar `docker compose build` o `docker build`, y publicar `result.json` más `validation.log`.
+### Variables para producción
 
-## Roadmap por fases
-### Fase 1
-- MVP funcional local.
-- Docker propio.
-- Auth y UI editable.
+| Variable | Descripción |
+| --- | --- |
+| `DATABASE_URL` | conexión a PostgreSQL |
+| `CELERY_BROKER_URL` | broker de Celery |
+| `CELERY_RESULT_BACKEND` | backend de resultados de Celery |
+| `DJANGO_EMAIL_BACKEND` | backend de correo |
+| `DJANGO_DEFAULT_FROM_EMAIL` | remitente por defecto |
+| `DJANGO_SECURE_SSL_REDIRECT` | fuerza HTTPS |
+| `DJANGO_CSRF_COOKIE_SECURE` | cookie CSRF segura |
+| `DJANGO_SESSION_COOKIE_SECURE` | cookie de sesión segura |
+| `DJANGO_SECURE_HSTS_SECONDS` | HSTS |
+| `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | HSTS subdominios |
+| `DJANGO_SECURE_HSTS_PRELOAD` | HSTS preload |
 
-### Fase 2
-- Jobs asíncronos.
-- Mejoras de heurísticas.
-- Integraciones Git.
+### Variables para storage en Supabase
 
-### Fase 3
-- Billing, workspaces, auditoría y despliegues integrados.
-- Reglas por organización.
-- Soporte enterprise.
+| Variable | Descripción |
+| --- | --- |
+| `SUPABASE_STORAGE_BUCKET` | bucket privado para uploads y bundles |
+| `SUPABASE_STORAGE_S3_ENDPOINT_URL` | endpoint S3 de Supabase |
+| `SUPABASE_STORAGE_S3_REGION` | región S3 |
+| `SUPABASE_STORAGE_ACCESS_KEY_ID` | access key S3 |
+| `SUPABASE_STORAGE_SECRET_ACCESS_KEY` | secret key S3 |
+| `SUPABASE_STORAGE_MEDIA_PATH_PREFIX` | prefijo opcional dentro del bucket |
 
-### Setup de Render para validación remota
-- Mantener `AUTODOCKER_ASYNC_MODE=thread` o migrar a Celery según el resto del runtime, pero el backend de validación debe apuntar a `github_actions`.
-- En `render.yaml`, dejar `AUTODOCKER_VALIDATION_BACKEND=github_actions` y marcar `AUTODOCKER_VALIDATION_EXECUTOR_REPO` / `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN` como `sync: false`.
-- Crear el repo executor privado desde `docs/github-actions/validate.yml.example` y publicar un workflow llamado `validate.yml`.
-- Cargar en Render los secretos del executor repo, el token del executor y la configuración de storage privada para bundles.
-- `.env.prod.example` debe reflejar la misma configuración para bootstrap manual o despliegues alternativos.
+### Variables para validación remota con GitHub Actions
 
-## MVP desarrollable en pocos días
-- Día 1: scaffold, modelos, carga de fuentes.
-- Día 2: detector heurístico.
-- Día 3: generador y exportación.
-- Día 4: UI editable.
-- Día 5: tests, hardening y deploy inicial.
+| Variable | Descripción |
+| --- | --- |
+| `AUTODOCKER_VALIDATION_BACKEND` | `local` o `github_actions` |
+| `AUTODOCKER_VALIDATION_EXECUTOR_REPO` | repo privado executor, por ejemplo `owner/autodocker-validator` |
+| `AUTODOCKER_VALIDATION_EXECUTOR_WORKFLOW` | workflow del executor, por ejemplo `validate.yml` |
+| `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN` | token del sistema con permisos sobre el repo executor |
+| `AUTODOCKER_VALIDATION_BUNDLE_TTL_SECONDS` | retención del bundle |
+| `AUTODOCKER_VALIDATION_MAX_BUNDLE_MB` | tamaño máximo del bundle |
 
-## Versión premium/escalable del producto
-- Procesamiento en background con colas y almacenamiento de snapshots.
-- SSO, RBAC, auditoría y políticas de seguridad.
-- Integraciones con GitHub/GitLab/Bitbucket.
-- Sugerencias de despliegue multi-cloud y políticas de cumplimiento.
+## Validación remota
 
-## Deploy en Render
-### Blueprint incluido
-- El repo ahora incluye [render.yaml](./render.yaml) para desplegar AutoDocker en Render con un único web service `free`, usando tu PostgreSQL externo y Supabase Storage para reemplazar `media/`.
-- El deploy está configurado en `AUTODOCKER_ASYNC_MODE=thread` y `AUTODOCKER_ENABLE_RUNTIME_JOBS=false`.
-- Esa decisión sigue siendo intencional: con la arquitectura actual, separar `web` y `worker` seguiría exigiendo storage compartido y coordinación adicional para jobs.
-- Los ZIPs de análisis ya no necesitan disk persistente en Render si configurás el bucket privado de Supabase Storage.
-- `PYTHON_VERSION` queda fijada en `3.13.2` para no depender del default actual de Render.
+En producción, AutoDocker puede ejecutar la validación real fuera del web process usando GitHub Actions:
 
-### Qué queda habilitado y qué no
-- Funciona: auth, dashboard, análisis por ZIP/Git, generación de artefactos, edición, workspaces, invitaciones y descarga.
-- Queda deshabilitado en Render: preview ejecutable y validación Docker host-based.
-- Si más adelante querés `worker` real en Render, el paso correcto es mover los uploads a storage compartido externo antes de separar procesos.
+1. materializa la fuente del análisis
+2. superpone los artefactos editados
+3. arma un bundle reproducible
+4. lo sube a storage privado
+5. dispara un workflow en un repo executor privado
+6. consume el resultado y los logs desde los artifacts del workflow
 
-### Cómo desplegar
-1. Commit y push de `render.yaml` a `main`.
-2. En Render, elegir `New +` -> `Blueprint`.
-3. Seleccionar el repo `LucasTabacchi/autodocker`.
-4. En Supabase, crear un bucket privado para media, por ejemplo `autodocker-media`.
-5. En Supabase, generar credenciales S3 para Storage y copiar:
-   - endpoint S3
-   - region
-   - access key id
-   - secret access key
-6. En el formulario de variables de Render, pegar:
-   - `DATABASE_URL`
-   - `SUPABASE_STORAGE_BUCKET`
-   - `SUPABASE_STORAGE_S3_ENDPOINT_URL`
-   - `SUPABASE_STORAGE_S3_REGION`
-   - `SUPABASE_STORAGE_ACCESS_KEY_ID`
-   - `SUPABASE_STORAGE_SECRET_ACCESS_KEY`
-7. Confirmar el Blueprint y esperar el primer deploy.
-8. En plan `free`, las migraciones corren durante `buildCommand` porque Render no soporta `preDeployCommand` en ese tier.
+El workflow de referencia está en [`docs/github-actions/validate.yml.example`](./docs/github-actions/validate.yml.example).
 
-### Notas de costo y límites
-- El plan `free` evita el requisito de tarjeta en el deploy del web service.
-- Supabase Storage free tiene límites; sirve bien para demo y testing, pero no para cargas grandes o muchos ZIPs.
-- Si querés pasar luego a `web + worker`, primero tenés que sacar los uploads de disco local y moverlos a storage compartido externo.
+## Cómo contribuir
 
-## Ruta recomendada para runtime real
-Si querés habilitar validación real y más adelante previews públicos sin salir del esquema `Render web + Supabase`, la evolución recomendada es separar el runtime pesado en un worker externo.
+1. Hacé fork del repositorio.
+2. Creá una rama descriptiva.
 
-### Arquitectura objetivo
-- Render: web/UI/API pública.
-- Supabase: PostgreSQL + Storage privado para los ZIPs.
-- Redis externo: broker/result backend para Celery.
-- Worker externo con Docker: ejecuta validaciones reales y, después, previews.
-- Tunnel/proxy público: solo necesario para la fase de previews.
+```bash
+git checkout -b feature/mi-cambio
+```
 
-### Fase 1: validación real
-- Mover el web desde `AUTODOCKER_ASYNC_MODE=thread` a `AUTODOCKER_ASYNC_MODE=celery`.
-- Conectar web y worker al mismo `CELERY_BROKER_URL` y `CELERY_RESULT_BACKEND`.
-- Correr un `celery worker` dedicado fuera de Render, en una máquina con Docker disponible.
-- Mantener los previews deshabilitados mientras se habilita solo la validación real.
-- Resultado esperado: el botón de validate deja de depender del host local o del web process.
+3. Implementá el cambio.
+4. Corré la suite de tests.
 
-### Fase 2: previews públicos
-- Mantener el worker externo con Docker como executor de previews.
-- Agregar un proxy local delante de los contenedores preview.
-- Publicarlo con un tunnel/proxy público, por ejemplo Cloudflare Tunnel.
-- Adaptar `PreviewService` para devolver URLs públicas reales en lugar de `127.0.0.1:<puerto>`.
-- Agregar cleanup de contenedores, rutas y expiración de previews.
+```bash
+python manage.py test
+```
 
-### Recomendación operativa
-- No mezclar validación real y preview público en el mismo cambio.
-- Resolver primero Redis + worker + validación.
-- Después agregar el split de flags para validación y preview.
-- Recién al final sumar proxy/tunnel y URLs públicas para previews.
+5. Si corresponde, actualizá documentación y ejemplos.
+6. Abrí un pull request con contexto claro:
+   - problema
+   - solución
+   - riesgos
+   - forma de probar
+
+### Recomendaciones para contribuciones
+
+- mantené los cambios de dominio dentro de `core/services/`
+- agregá tests cuando cambies comportamiento
+- evitá mezclar refactors no relacionados con fixes funcionales
+- documentá nuevas variables de entorno en `.env.prod.example` y en este README
+
+## Licencia
+
+Actualmente el repositorio no incluye un archivo `LICENSE`, así que no hay una licencia pública definida todavía. Si vas a distribuir el proyecto o aceptar contribuciones externas de forma sostenida, conviene agregar una licencia explícita y actualizar este README.
