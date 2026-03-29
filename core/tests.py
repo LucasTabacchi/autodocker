@@ -31,6 +31,7 @@ from core.crypto import TOKEN_PREFIX
 from core.services.build_validation import BuildValidationResult, BuildValidationService, RemoteValidationService
 from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
+from core.services.github_actions import GitHubActionsClient
 from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
 from core.services.contracts import GeneratedArtifactSpec
@@ -1434,6 +1435,49 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         mock_storage_url.assert_called_once()
         mock_dispatch_validation.assert_called_once()
         mock_wait_for_completion.assert_called_once()
+
+    @patch("core.services.github_actions.GitHubActionsClient._request_raw")
+    @patch("core.services.github_actions.GitHubActionsClient._request")
+    def test_github_actions_client_reads_result_from_validation_results_artifact(
+        self,
+        mock_request,
+        mock_request_raw,
+    ):
+        artifact_archive = io.BytesIO()
+        with zipfile.ZipFile(artifact_archive, "w", zipfile.ZIP_DEFLATED) as zipped:
+            zipped.writestr(
+                "bundle/result.json",
+                json.dumps(
+                    {
+                        "success": True,
+                        "summary": "docker build completed successfully",
+                        "command": ["docker", "build", "-t", "autodocker-validate", "."],
+                        "duration_seconds": 12,
+                    }
+                ),
+            )
+            zipped.writestr("bundle/validation.log", "remote logs")
+        mock_request.return_value = {
+            "artifacts": [
+                {
+                    "name": "validation-results",
+                    "archive_download_url": "https://example.com/artifacts/123.zip",
+                }
+            ]
+        }
+        mock_request_raw.return_value = artifact_archive.getvalue()
+
+        result = GitHubActionsClient(
+            token="token",
+            repo="LucasTabacchi/autodocker-validator",
+            workflow="validate.yml",
+        ).download_result_artifacts(workflow_run_id=123)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["summary"], "docker build completed successfully")
+        self.assertEqual(result["command"], ["docker", "build", "-t", "autodocker-validate", "."])
+        self.assertEqual(result["duration_seconds"], 12)
+        self.assertEqual(result["logs"], "remote logs")
 
     @override_settings(
         AUTODOCKER_ENABLE_RUNTIME_JOBS=True,

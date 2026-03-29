@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import time
+import zipfile
 from dataclasses import dataclass
 from urllib import error, parse, request
 
@@ -82,7 +84,7 @@ class GitHubActionsClient:
             if run.get("status") == "completed":
                 artifacts = self.download_result_artifacts(workflow_run_id)
                 return {
-                    "success": run.get("conclusion") == "success",
+                    "success": run.get("conclusion") == "success" and bool(artifacts.get("success")),
                     "summary": artifacts.get("summary", ""),
                     "command": artifacts.get("command", []),
                     "logs": artifacts.get("logs", ""),
@@ -103,17 +105,34 @@ class GitHubActionsClient:
             f"/repos/{self.repo}/actions/runs/{workflow_run_id}/artifacts",
         )
         artifacts = payload.get("artifacts") or []
-        result: dict = {}
-        for artifact in artifacts:
-            name = artifact.get("name")
-            if not name:
-                continue
-            raw = self._request_raw(artifact["archive_download_url"])
-            if name == "result.json":
-                result.update(json.loads(raw.decode("utf-8")))
-            elif name == "validation.log":
-                result["logs"] = raw.decode("utf-8")
-        return result
+        artifact = next(
+            (
+                item
+                for item in artifacts
+                if (item.get("name") or "") in {"validation-results"}
+                or (item.get("name") or "").startswith("validation-result-")
+            ),
+            None,
+        )
+        if artifact is None:
+            raise GitHubActionsError(
+                f"No se encontró el artifact de validación para el workflow run {workflow_run_id}."
+            )
+
+        raw = self._request_raw(artifact["archive_download_url"])
+        with zipfile.ZipFile(io.BytesIO(raw)) as zipped:
+            names = zipped.namelist()
+            result_name = next((name for name in names if name.endswith("result.json")), "")
+            log_name = next((name for name in names if name.endswith("validation.log")), "")
+            if not result_name:
+                raise GitHubActionsError(
+                    f"El artifact de validación {artifact.get('name', '')} no contiene result.json."
+                )
+
+            result = json.loads(zipped.read(result_name).decode("utf-8"))
+            if log_name:
+                result["logs"] = zipped.read(log_name).decode("utf-8")
+            return result
 
     def _request(self, method: str, path: str, body: dict | None = None) -> dict:
         req = request.Request(
