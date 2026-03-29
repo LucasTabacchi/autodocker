@@ -1,0 +1,56 @@
+name: AutoDocker validation executor
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        required: true
+        type: string
+      analysis_id:
+        required: true
+        type: string
+      bundle_url:
+        required: true
+        type: string
+      bundle_sha256:
+        required: true
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download bundle
+        run: |
+          curl -fsSL "${{ inputs.bundle_url }}" -o bundle.zip
+
+      - name: Verify checksum
+        run: |
+          echo "${{ inputs.bundle_sha256 }}  bundle.zip" | sha256sum -c -
+
+      - name: Extract bundle
+        run: |
+          unzip -q bundle.zip -d bundle
+
+      - name: Run validation
+        working-directory: bundle
+        run: |
+          if [ -f docker-compose.yml ]; then
+            docker compose -f docker-compose.yml config
+            docker compose -f docker-compose.yml build
+            printf '%s\n' '{"success":true,"summary":"docker compose build completed successfully","command":["docker","compose","-f","docker-compose.yml","build"],"duration_seconds":0}' > result.json
+          else
+            docker build -t autodocker-validate .
+            printf '%s\n' '{"success":true,"summary":"docker build completed successfully","command":["docker","build","-t","autodocker-validate","."],"duration_seconds":0}' > result.json
+          fi
+          printf '%s\n' "validation complete" > validation.log
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            bundle/result.json
+            bundle/validation.log

@@ -135,6 +135,9 @@ docker compose exec web python manage.py createsuperuser
 - `AUTODOCKER_ENABLE_RUNTIME_JOBS`: habilita preview/validación que construyen o ejecutan contenedores.
 - `AUTODOCKER_TOKEN_ENCRYPTION_KEY`: clave separada para proteger tokens externos almacenados.
 - `SUPABASE_STORAGE_*`: habilitan storage remoto privado para los ZIPs subidos cuando querés evitar `media/` local.
+- `AUTODOCKER_VALIDATION_BACKEND`: elige `local` en desarrollo o `github_actions` para producción.
+- `AUTODOCKER_VALIDATION_EXECUTOR_REPO`, `AUTODOCKER_VALIDATION_EXECUTOR_WORKFLOW`, `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN`: configuran el executor privado de GitHub Actions.
+- `AUTODOCKER_VALIDATION_BUNDLE_TTL_SECONDS` y `AUTODOCKER_VALIDATION_MAX_BUNDLE_MB`: controlan retención y tamaño máximo del bundle de validación.
 
 ### Convención recomendada
 - `manage.py` local: usá `.env`
@@ -151,6 +154,13 @@ docker compose exec web python manage.py createsuperuser
 | Configurar producción / Supabase / `docker-compose.prod.yml` | `.env.prod` |
 | Crear el `.env.prod` inicial | `.env.prod.example` |
 
+### Validación remota en producción
+- En producción, AutoDocker valida por defecto con `AUTODOCKER_VALIDATION_BACKEND=github_actions`.
+- El backend remoto crea un bundle reproducible, lo sube a storage privado y dispara un workflow en un repo executor privado.
+- El executor no reutiliza el token de PRs; usa `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN` solamente para dispatch, lectura de runs y descarga de artifacts.
+- La implementación esperada del workflow está documentada en [`docs/github-actions/validate.yml.example`](./docs/github-actions/validate.yml.example).
+- El workflow debe leer `job_id`, `analysis_id`, `bundle_url` y `bundle_sha256`, verificar el ZIP, ejecutar `docker compose build` o `docker build`, y publicar `result.json` más `validation.log`.
+
 ## Roadmap por fases
 ### Fase 1
 - MVP funcional local.
@@ -166,6 +176,13 @@ docker compose exec web python manage.py createsuperuser
 - Billing, workspaces, auditoría y despliegues integrados.
 - Reglas por organización.
 - Soporte enterprise.
+
+### Setup de Render para validación remota
+- Mantener `AUTODOCKER_ASYNC_MODE=thread` o migrar a Celery según el resto del runtime, pero el backend de validación debe apuntar a `github_actions`.
+- En `render.yaml`, dejar `AUTODOCKER_VALIDATION_BACKEND=github_actions` y marcar `AUTODOCKER_VALIDATION_EXECUTOR_REPO` / `AUTODOCKER_VALIDATION_EXECUTOR_TOKEN` como `sync: false`.
+- Crear el repo executor privado desde `docs/github-actions/validate.yml.example` y publicar un workflow llamado `validate.yml`.
+- Cargar en Render los secretos del executor repo, el token del executor y la configuración de storage privada para bundles.
+- `.env.prod.example` debe reflejar la misma configuración para bootstrap manual o despliegues alternativos.
 
 ## MVP desarrollable en pocos días
 - Día 1: scaffold, modelos, carga de fuentes.

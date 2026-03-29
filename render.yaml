@@ -40,6 +40,14 @@ services:
         value: "thread"
       - key: AUTODOCKER_ENABLE_RUNTIME_JOBS
         value: "false"
+      - key: AUTODOCKER_VALIDATION_BACKEND
+        value: "github_actions"
+      - key: AUTODOCKER_VALIDATION_EXECUTOR_REPO
+        sync: false
+      - key: AUTODOCKER_VALIDATION_EXECUTOR_WORKFLOW
+        value: "validate.yml"
+      - key: AUTODOCKER_VALIDATION_EXECUTOR_TOKEN
+        sync: false
       - key: DJANGO_DEFAULT_FROM_EMAIL
         value: "autodocker@render.local"
       - key: DJANGO_EMAIL_BACKEND
