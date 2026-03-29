@@ -28,7 +28,7 @@ class ValidationBundle:
 
 
 class ValidationBundleService:
-    def build_bundle(self, analysis: ProjectAnalysis) -> ValidationBundle:
+    def build(self, analysis: ProjectAnalysis) -> ValidationBundle:
         workspace_root, source_root = prepare_source_workspace(analysis, prefix="autodocker-bundle-")
         try:
             overlay_generated_artifacts(source_root, list(analysis.artifacts.all()))

@@ -266,7 +266,7 @@ class RemoteArchiveIngestionTests(SimpleTestCase):
             }
         )
 
-        bundle = ValidationBundleService().build_bundle(analysis)
+        bundle = ValidationBundleService().build(analysis)
         try:
             self.assertTrue(bundle.bundle_path.exists())
             self.assertTrue(bundle.bundle_path.is_file())
@@ -307,7 +307,7 @@ class RemoteArchiveIngestionTests(SimpleTestCase):
             ],
         )
 
-        bundle = ValidationBundleService().build_bundle(analysis)
+        bundle = ValidationBundleService().build(analysis)
         try:
             with zipfile.ZipFile(bundle.bundle_path) as zipped:
                 self.assertEqual(
