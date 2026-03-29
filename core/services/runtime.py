@@ -82,6 +82,54 @@ def runtime_jobs_enabled() -> bool:
     return bool(getattr(settings, "AUTODOCKER_ENABLE_RUNTIME_JOBS", False))
 
 
+def validation_backend_name() -> str:
+    return (getattr(settings, "AUTODOCKER_VALIDATION_BACKEND", "local") or "local").strip().lower()
+
+
+def validation_runtime_capability() -> dict[str, str | bool]:
+    backend = validation_backend_name()
+    if backend == "github_actions":
+        return {
+            "enabled": True,
+            "backend": backend,
+            "reason": "",
+        }
+
+    try:
+        ensure_runtime_jobs_enabled("La validación de build")
+        ensure_docker_runtime_access("La validación de build")
+    except CommandExecutionError as exc:
+        return {
+            "enabled": False,
+            "backend": backend,
+            "reason": str(exc),
+        }
+
+    return {
+        "enabled": True,
+        "backend": backend,
+        "reason": "",
+    }
+
+
+def preview_runtime_capability() -> dict[str, str | bool]:
+    try:
+        ensure_runtime_jobs_enabled("La preview ejecutable")
+        ensure_docker_runtime_access("La preview ejecutable")
+    except CommandExecutionError as exc:
+        return {
+            "enabled": False,
+            "backend": "docker",
+            "reason": str(exc),
+        }
+
+    return {
+        "enabled": True,
+        "backend": "docker",
+        "reason": "",
+    }
+
+
 def ensure_runtime_jobs_enabled(action_label: str) -> None:
     if runtime_jobs_enabled():
         return

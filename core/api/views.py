@@ -36,7 +36,7 @@ from core.models import (
 )
 from core.services.diffing import ArtifactDiffService
 from core.services.preview import PreviewService
-from core.services.runtime import runtime_jobs_enabled
+from core.services.runtime import preview_runtime_capability, validation_runtime_capability
 from core.services.workspaces import (
     accept_workspace_invitation,
     add_workspace_member,
@@ -219,14 +219,10 @@ class AnalysisDiffApiView(AuthenticatedApiView):
 
 class AnalysisValidateApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
-        if not runtime_jobs_enabled():
+        capability = validation_runtime_capability()
+        if not capability["enabled"]:
             return Response(
-                {
-                    "detail": (
-                        "La validación de build está deshabilitada en este entorno. "
-                        "Configurá AUTODOCKER_ENABLE_RUNTIME_JOBS=true para habilitarla."
-                    )
-                },
+                {"detail": capability["reason"]},
                 status=status.HTTP_409_CONFLICT,
             )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
@@ -290,14 +286,10 @@ class AnalysisGitHubPrApiView(AuthenticatedApiView):
 
 class AnalysisPreviewApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
-        if not runtime_jobs_enabled():
+        capability = preview_runtime_capability()
+        if not capability["enabled"]:
             return Response(
-                {
-                    "detail": (
-                        "La preview ejecutable está deshabilitada en este entorno. "
-                        "Configurá AUTODOCKER_ENABLE_RUNTIME_JOBS=true para habilitarla."
-                    )
-                },
+                {"detail": capability["reason"]},
                 status=status.HTTP_409_CONFLICT,
             )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)

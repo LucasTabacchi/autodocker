@@ -12,6 +12,7 @@ from core.models import (
     WorkspaceInvitation,
     WorkspaceMembership,
 )
+from core.services.runtime import preview_runtime_capability, validation_runtime_capability
 
 
 class GeneratedArtifactSerializer(serializers.ModelSerializer):
@@ -174,6 +175,7 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
     latest_github_pr_job = serializers.SerializerMethodField()
     active_preview = serializers.SerializerMethodField()
     workspace = serializers.SerializerMethodField()
+    runtime_capabilities = serializers.SerializerMethodField()
 
     class Meta:
         model = ProjectAnalysis
@@ -218,6 +220,7 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             "latest_validation_job",
             "latest_github_pr_job",
             "active_preview",
+            "runtime_capabilities",
         )
 
     def get_download_url(self, obj: ProjectAnalysis) -> str:
@@ -256,3 +259,9 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             )
         ).order_by("-created_at").first()
         return PreviewRunSerializer(preview).data if preview else None
+
+    def get_runtime_capabilities(self, obj: ProjectAnalysis):
+        return {
+            "validation": validation_runtime_capability(),
+            "preview": preview_runtime_capability(),
+        }

@@ -487,57 +487,8 @@
     </main>
 
     <script src="{% static 'core/js/app_helpers.js' %}"></script>
+    <script src="{% static 'core/js/dashboard_form.js' %}"></script>
+    <script src="{% static 'core/js/dashboard_collections.js' %}"></script>
     <script src="{% static 'core/js/app.js' %}"></script>
-    <script>
-        /* Source toggle ZIP / Git */
-        function setSource(type) {
-            const zipFields = document.getElementById('source-zip-fields');
-            const gitFields = document.getElementById('source-git-fields');
-            const btnZip = document.getElementById('source-toggle-zip');
-            const btnGit = document.getElementById('source-toggle-git');
-
-            if (type === 'zip') {
-                zipFields.style.display = '';
-                gitFields.style.display = 'none';
-                btnZip.classList.add('is-active');
-                btnGit.classList.remove('is-active');
-                document.getElementById('id_repository_url').value = '';
-            } else {
-                zipFields.style.display = 'none';
-                gitFields.style.display = '';
-                btnGit.classList.add('is-active');
-                btnZip.classList.remove('is-active');
-            }
-        }
-
-        /* Profile segment */
-        function setProfile(value, btn) {
-            document.querySelectorAll('.profile-segment__btn').forEach(b => b.classList.remove('is-active'));
-            btn.classList.add('is-active');
-            document.getElementById('id_generation_profile').value = value;
-        }
-
-        /* Dropzone: show filename on select */
-        const archiveInput = document.getElementById('id_archive');
-        if (archiveInput) {
-            archiveInput.addEventListener('change', function() {
-                const el = document.getElementById('dropzone-text');
-                if (el && this.files.length) {
-                    el.textContent = this.files[0].name;
-                }
-            });
-        }
-
-        /* Dropzone: drag over styling */
-        const dropzone = document.getElementById('dropzone');
-        if (dropzone) {
-            ['dragenter', 'dragover'].forEach(ev => {
-                dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('is-over'); });
-            });
-            ['dragleave', 'drop'].forEach(ev => {
-                dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('is-over'); });
-            });
-        }
-    </script>
 </body>
 </html>
