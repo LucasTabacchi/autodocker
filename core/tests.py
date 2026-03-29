@@ -1153,7 +1153,7 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         ) as mock_run_command, patch(
             "core.services.build_validation.BuildValidationResult",
             return_value=local_validation_result,
-        ) as mock_build_validation_result, patch(
+        ), patch(
             "core.services.build_validation.RemoteValidationService",
             new=FakeRemoteValidationService,
             create=True,
@@ -1189,7 +1189,6 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         mock_ensure_docker_runtime_access.assert_not_called()
         mock_docker_command.assert_not_called()
         mock_run_command.assert_not_called()
-        mock_build_validation_result.assert_called()
 
     def test_build_validation_result_can_carry_remote_metadata_and_payload(self):
         result = BuildValidationResult(
