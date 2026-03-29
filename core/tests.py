@@ -36,6 +36,7 @@ from core.services.healthchecks import HealthcheckPlannerService
 from core.services.contracts import GeneratedArtifactSpec
 from core.services.ingestion import cleanup_workspace, prepare_source_workspace
 from core.services.validation_bundle import ValidationBundleService
+from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
@@ -1269,6 +1270,20 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             command=["remote", "validate"],
             logs="remote ok",
             image_tag="",
+            metadata={
+                "validation_backend": "github_actions",
+                "workflow_run_id": 123,
+                "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+                "bundle_sha256": "b" * 64,
+            },
+            result_payload={
+                "executor": "github_actions",
+                "summary": "docker build completed successfully",
+                "artifact_urls": {
+                    "workflow_run": "https://github.com/acme/executor/actions/runs/123",
+                },
+                "duration_seconds": 86,
+            },
         )
         local_validation_result = SimpleNamespace(
             success=True,
@@ -1419,6 +1434,58 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         mock_storage_url.assert_called_once()
         mock_dispatch_validation.assert_called_once()
         mock_wait_for_completion.assert_called_once()
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=True,
+        AUTODOCKER_VALIDATION_BACKEND="github_actions",
+    )
+    @patch("core.services.build_validation.RemoteValidationService.validate")
+    def test_execution_job_runner_persists_remote_validation_metadata_and_payload(
+        self,
+        mock_remote_validate,
+    ):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="runner-remote-demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        job = ExecutionJob.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.VALIDATION,
+        )
+
+        mock_remote_validate.return_value = BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+            metadata={
+                "validation_backend": "github_actions",
+                "workflow_run_id": 123,
+                "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+                "bundle_sha256": "b" * 64,
+            },
+            result_payload={
+                "executor": "github_actions",
+                "summary": "docker build completed successfully",
+                "artifact_urls": {
+                    "workflow_run": "https://github.com/acme/executor/actions/runs/123",
+                },
+                "duration_seconds": 86,
+            },
+        )
+
+        ExecutionJobRunner().run(job)
+        job.refresh_from_db()
+
+        self.assertEqual(job.status, ExecutionJob.Status.READY)
+        self.assertEqual(job.metadata["workflow_run_id"], 123)
+        self.assertEqual(job.result_payload["executor"], "github_actions")
+        self.assertEqual(job.result_payload["summary"], "docker build completed successfully")
+        mock_remote_validate.assert_called_once()
 
     @patch(
         "core.services.execution_runner.BuildValidationService.validate",

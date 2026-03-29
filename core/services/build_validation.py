@@ -45,7 +45,14 @@ class BuildValidationService:
     def backend_name(self) -> str:
         return (getattr(settings, "AUTODOCKER_VALIDATION_BACKEND", "local") or "local").strip()
 
-    def validate(self, analysis: ProjectAnalysis) -> BuildValidationResult:
+    def validate(self, job: ExecutionJob) -> BuildValidationResult:
+        if self.backend_name == "github_actions":
+            return RemoteValidationService().validate(job)
+        if not job.analysis:
+            raise ValueError("El job de validación no tiene análisis asociado.")
+        return self._validate_local(job.analysis)
+
+    def _validate_local(self, analysis: ProjectAnalysis) -> BuildValidationResult:
         ensure_runtime_jobs_enabled("La validación de build")
         ensure_docker_runtime_access("La validación de build")
         temp_dir, source_root = prepare_source_workspace(analysis, prefix="autodocker-validate-")

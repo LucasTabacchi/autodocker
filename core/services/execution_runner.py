@@ -23,8 +23,17 @@ class ExecutionJobRunner:
 
         try:
             if job.kind == ExecutionJob.Kind.VALIDATION:
-                result = self.validation_service.validate(job.analysis)
-                job.result_payload = result.to_dict()
+                result = self.validation_service.validate(job)
+                result_dict = result.to_dict()
+                job.metadata = {
+                    **(job.metadata or {}),
+                    **result_dict.pop("metadata", {}),
+                }
+                job.result_payload = {
+                    **(job.result_payload or {}),
+                    **result_dict.pop("result_payload", {}),
+                    **result_dict,
+                }
                 job.logs = result.logs
                 job.status = (
                     ExecutionJob.Status.READY
@@ -67,7 +76,7 @@ class ExecutionJobRunner:
             job.logs = f"{job.logs}\n\n{exc}".strip()
             job.result_payload = {**job.result_payload, "error": str(exc)}
         job.finished_at = timezone.now()
-        job.save(update_fields=["status", "logs", "result_payload", "finished_at", "updated_at"])
+        job.save(update_fields=["status", "logs", "metadata", "result_payload", "finished_at", "updated_at"])
         return job
 
     def _resolve_connection(self, job: ExecutionJob):
