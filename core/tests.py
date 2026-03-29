@@ -1107,6 +1107,81 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(payload["status"], ExecutionJob.Status.READY)
         self.assertEqual(payload["result_payload"]["image_tag"], "autodocker-test")
 
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=True,
+        AUTODOCKER_VALIDATION_BACKEND="github_actions",
+    )
+    @patch(
+        "core.services.execution_runner.BuildValidationService.validate",
+        return_value=BuildValidationResult(
+            success=True,
+            command=["docker", "build", "."],
+            logs="local ok",
+            image_tag="autodocker-test",
+        ),
+    )
+    @patch(
+        "core.services.build_validation.RemoteValidationService",
+        create=True,
+    )
+    def test_validate_endpoint_uses_remote_backend_when_configured(
+        self,
+        _mock_remote_validate,
+        _mock_local_validate,
+    ):
+        _mock_remote_validate.return_value.validate.return_value = BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+        )
+        response = self._post_analysis(
+            files={
+                "next-sample/package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                )
+            }
+        )
+        analysis_id = response.json()["id"]
+
+        validate_response = self.client.post(
+            reverse("core-api:analysis-validate", args=[analysis_id])
+        )
+
+        self.assertEqual(validate_response.status_code, 202)
+        payload = validate_response.json()
+        self.assertEqual(payload["status"], ExecutionJob.Status.READY)
+        self.assertEqual(payload["result_payload"].get("executor"), "github_actions")
+
+    def test_build_validation_result_can_carry_remote_metadata_and_payload(self):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        ExecutionJob.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.VALIDATION,
+            label="Validate demo",
+        )
+
+        result = BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+        )
+
+        self.assertEqual(result.to_dict().get("result_payload", {}).get("executor"), "github_actions")
+        self.assertEqual(result.to_dict().get("metadata", {}).get("workflow_run_id"), 123)
+
     @patch(
         "core.services.execution_runner.BuildValidationService.validate",
         return_value=BuildValidationResult(
