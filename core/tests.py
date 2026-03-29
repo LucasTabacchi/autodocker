@@ -33,7 +33,9 @@ from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
 from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
+from core.services.contracts import GeneratedArtifactSpec
 from core.services.ingestion import cleanup_workspace, prepare_source_workspace
+from core.services.validation_bundle import ValidationBundleService
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
@@ -180,6 +182,144 @@ class RemoteArchiveIngestionTests(SimpleTestCase):
         finally:
             if temp_dir is not None:
                 cleanup_workspace(temp_dir)
+
+    def _build_ready_zip_analysis(
+        self,
+        *,
+        files: dict[str, str],
+        artifacts: list[GeneratedArtifactSpec] | None = None,
+    ):
+        class RemoteArchiveFile:
+            def __init__(self, payload: bytes):
+                self.payload = payload
+
+            def open(self, mode: str = "rb"):
+                return io.BytesIO(self.payload)
+
+        archive_buffer = io.BytesIO()
+        with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED) as zipped:
+            for path, content in files.items():
+                zipped.writestr(path, content)
+
+        return SimpleNamespace(
+            source_type=ProjectAnalysis.SourceType.ZIP,
+            archive=RemoteArchiveFile(archive_buffer.getvalue()),
+            repository_url="",
+            artifacts=SimpleNamespace(all=lambda: list(artifacts or [])),
+        )
+
+    def _build_ready_git_analysis(
+        self,
+        *,
+        files: dict[str, str],
+        artifacts: list[GeneratedArtifactSpec] | None = None,
+    ):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        repo_root = Path(temp_dir.name)
+        subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["git", "config", "user.email", "tests@example.com"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "AutoDocker Tests"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        for path, content in files.items():
+            file_path = repo_root / path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content, encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        return SimpleNamespace(
+            source_type=ProjectAnalysis.SourceType.GIT,
+            archive=None,
+            repository_url=str(repo_root),
+            artifacts=SimpleNamespace(all=lambda: list(artifacts or [])),
+        )
+
+    def test_validation_bundle_service_builds_bundle_from_zip_analysis(self):
+        analysis = self._build_ready_zip_analysis(
+            files={
+                "package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                ),
+                "src/index.js": "console.log('zip analysis');",
+            }
+        )
+
+        bundle = ValidationBundleService().build_bundle(analysis)
+        try:
+            self.assertTrue(bundle.bundle_path.exists())
+            self.assertTrue(bundle.bundle_path.is_file())
+            self.assertEqual(len(bundle.sha256), 64)
+            self.assertGreater(bundle.bundle_size_bytes, 0)
+
+            with zipfile.ZipFile(bundle.bundle_path) as zipped:
+                self.assertIn("package.json", zipped.namelist())
+                self.assertIn("src/index.js", zipped.namelist())
+        finally:
+            cleanup_workspace(bundle.workspace_root)
+
+    def test_validation_bundle_service_overlays_generated_artifacts(self):
+        analysis = self._build_ready_git_analysis(
+            files={
+                "package.json": json.dumps(
+                    {
+                        "name": "next-sample",
+                        "scripts": {"build": "next build", "start": "next start"},
+                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                    }
+                ),
+                "src/server.js": "console.log('git analysis');",
+            },
+            artifacts=[
+                GeneratedArtifactSpec(
+                    kind="dockerfile",
+                    path="Dockerfile",
+                    content="FROM node:22-alpine\nRUN echo remote bundle",
+                    description="Dockerfile",
+                ),
+                GeneratedArtifactSpec(
+                    kind="compose",
+                    path="docker-compose.yml",
+                    content="services:\n  app:\n    build: .\n",
+                    description="Compose",
+                ),
+            ],
+        )
+
+        bundle = ValidationBundleService().build_bundle(analysis)
+        try:
+            with zipfile.ZipFile(bundle.bundle_path) as zipped:
+                self.assertEqual(
+                    zipped.read("Dockerfile").decode("utf-8").replace("\r\n", "\n"),
+                    "FROM node:22-alpine\nRUN echo remote bundle",
+                )
+                self.assertEqual(
+                    zipped.read("docker-compose.yml").decode("utf-8").replace("\r\n", "\n"),
+                    "services:\n  app:\n    build: .\n",
+                )
+        finally:
+            cleanup_workspace(bundle.workspace_root)
 
 
 class AdditionalDetectorCoverageTests(SimpleTestCase):
