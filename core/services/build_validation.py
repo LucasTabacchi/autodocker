@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+
+from django.conf import settings
 
 from core.models import ProjectAnalysis
 from core.services.ingestion import (
@@ -24,12 +26,21 @@ class BuildValidationResult:
     command: list[str]
     logs: str
     image_tag: str = ""
+    metadata: dict[str, object] = field(default_factory=dict)
+    result_payload: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        data["metadata"] = data.get("metadata") or {}
+        data["result_payload"] = data.get("result_payload") or {}
+        return data
 
 
 class BuildValidationService:
+    @property
+    def backend_name(self) -> str:
+        return (getattr(settings, "AUTODOCKER_VALIDATION_BACKEND", "local") or "local").strip()
+
     def validate(self, analysis: ProjectAnalysis) -> BuildValidationResult:
         ensure_runtime_jobs_enabled("La validación de build")
         ensure_docker_runtime_access("La validación de build")

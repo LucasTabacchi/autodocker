@@ -28,7 +28,7 @@ from core.models import (
     WorkspaceMembership,
 )
 from core.crypto import TOKEN_PREFIX
-from core.services.build_validation import BuildValidationResult
+from core.services.build_validation import BuildValidationResult, BuildValidationService
 from core.services.detector import StackDetector
 from core.services.generator import ArtifactGenerator
 from core.services.github_pr import GitHubPullRequestResult
@@ -111,6 +111,16 @@ class DatabaseConfigTests(SimpleTestCase):
                 "application_name": "autodocker",
             },
         )
+
+    def test_validation_backend_env_defaults_to_local(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(project_settings.env("AUTODOCKER_VALIDATION_BACKEND", "local"), "local")
+
+
+class BuildValidationServiceTests(SimpleTestCase):
+    @override_settings(AUTODOCKER_VALIDATION_BACKEND="github_actions")
+    def test_backend_name_uses_overridden_remote_backend(self):
+        self.assertEqual(BuildValidationService().backend_name, "github_actions")
 
 
 class MediaStorageConfigTests(SimpleTestCase):
@@ -1114,6 +1124,24 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         class FakeRemoteValidationService:
             pass
 
+        remote_validation_result = BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+        )
+        local_validation_result = SimpleNamespace(
+            success=True,
+            logs="local ok",
+            to_dict=lambda: {
+                "success": True,
+                "command": ["docker", "build", "."],
+                "logs": "local ok",
+                "image_tag": "autodocker-test",
+                "result_payload": {"executor": "local"},
+            },
+        )
+
         with patch("core.services.build_validation.ensure_runtime_jobs_enabled") as mock_ensure_runtime_jobs_enabled, patch(
             "core.services.build_validation.ensure_docker_runtime_access"
         ) as mock_ensure_docker_runtime_access, patch(
@@ -1123,6 +1151,9 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             "core.services.build_validation.run_command",
             return_value=SimpleNamespace(output="local ok"),
         ) as mock_run_command, patch(
+            "core.services.build_validation.BuildValidationResult",
+            return_value=local_validation_result,
+        ) as mock_build_validation_result, patch(
             "core.services.build_validation.RemoteValidationService",
             new=FakeRemoteValidationService,
             create=True,
@@ -1130,12 +1161,7 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             FakeRemoteValidationService,
             "validate",
             create=True,
-            return_value=BuildValidationResult(
-                success=True,
-                command=["remote", "validate"],
-                logs="remote ok",
-                image_tag="",
-            ),
+            return_value=remote_validation_result,
         ) as mock_remote_validate:
             response = self._post_analysis(
                 files={
@@ -1157,12 +1183,13 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(validate_response.status_code, 202)
         payload = validate_response.json()
         self.assertEqual(payload["status"], ExecutionJob.Status.READY)
-        self.assertEqual(payload["result_payload"]["executor"], "github_actions")
         mock_remote_validate.assert_called_once()
+        self.assertEqual(payload["result_payload"]["executor"], "github_actions")
         mock_ensure_runtime_jobs_enabled.assert_not_called()
         mock_ensure_docker_runtime_access.assert_not_called()
         mock_docker_command.assert_not_called()
         mock_run_command.assert_not_called()
+        mock_build_validation_result.assert_called()
 
     def test_build_validation_result_can_carry_remote_metadata_and_payload(self):
         result = BuildValidationResult(
