@@ -8,7 +8,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
+from urllib import error
 
 import yaml
 from config import settings as project_settings
@@ -1478,6 +1479,42 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(result["command"], ["docker", "build", "-t", "autodocker-validate", "."])
         self.assertEqual(result["duration_seconds"], 12)
         self.assertEqual(result["logs"], "remote logs")
+
+    @patch("core.services.github_actions.request.urlopen")
+    @patch("core.services.github_actions.request.build_opener")
+    def test_github_actions_client_follows_artifact_redirect_without_forwarding_github_auth(
+        self,
+        mock_build_opener,
+        mock_urlopen,
+    ):
+        redirect_location = "https://pipelines.actions.githubusercontent.com/blob.zip?sig=abc123"
+        redirect_error = error.HTTPError(
+            url="https://api.github.com/artifacts/123.zip",
+            code=302,
+            msg="Found",
+            hdrs={"Location": redirect_location},
+            fp=io.BytesIO(b""),
+        )
+        mock_opener = Mock()
+        mock_opener.open.side_effect = redirect_error
+        mock_build_opener.return_value = mock_opener
+
+        final_response = MagicMock()
+        final_response.__enter__.return_value.read.return_value = b"zip-bytes"
+        mock_urlopen.return_value = final_response
+
+        payload = GitHubActionsClient(
+            token="token",
+            repo="LucasTabacchi/autodocker-validator",
+            workflow="validate.yml",
+        )._request_raw("https://api.github.com/artifacts/123.zip")
+
+        self.assertEqual(payload, b"zip-bytes")
+        mock_opener.open.assert_called_once()
+        mock_urlopen.assert_called_once()
+        redirected_request = mock_urlopen.call_args.args[0]
+        self.assertEqual(redirected_request.full_url, redirect_location)
+        self.assertNotIn("Authorization", redirected_request.headers)
 
     @patch("core.services.github_actions.time.sleep")
     @patch("core.services.github_actions.GitHubActionsClient._request")

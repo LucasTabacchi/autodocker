@@ -14,6 +14,11 @@ class GitHubActionsError(RuntimeError):
     """Raised when the GitHub Actions executor workflow fails."""
 
 
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # pragma: no cover - exercised indirectly
+        return None
+
+
 @dataclass(slots=True)
 class GitHubActionsClient:
     token: str | None = None
@@ -173,10 +178,16 @@ class GitHubActionsClient:
 
     def _request_raw(self, url: str) -> bytes:
         req = request.Request(url, headers=self._headers(False), method="GET")
+        opener = request.build_opener(_NoRedirectHandler)
         try:
-            with request.urlopen(req, timeout=self.request_timeout) as response:
+            with opener.open(req, timeout=self.request_timeout) as response:
                 return response.read()
         except error.HTTPError as exc:
+            redirect_location = exc.headers.get("Location", "")
+            if exc.code in {301, 302, 303, 307, 308} and redirect_location:
+                redirect_req = request.Request(redirect_location, method="GET")
+                with request.urlopen(redirect_req, timeout=self.request_timeout) as response:
+                    return response.read()
             detail = exc.read().decode("utf-8", errors="ignore")
             raise GitHubActionsError(detail or f"GitHub devolvió HTTP {exc.code}.") from exc
         except error.URLError as exc:
