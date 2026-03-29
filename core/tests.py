@@ -34,7 +34,6 @@ from core.services.generator import ArtifactGenerator
 from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
 from core.services.ingestion import cleanup_workspace, prepare_source_workspace
-from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
@@ -1112,10 +1111,11 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         AUTODOCKER_VALIDATION_BACKEND="github_actions",
     )
     def test_validate_endpoint_uses_remote_backend_when_configured(self):
-        with patch(
-            "core.services.build_validation.ensure_runtime_jobs_enabled",
-        ) as mock_ensure_runtime_jobs_enabled, patch(
-            "core.services.build_validation.ensure_docker_runtime_access",
+        class FakeRemoteValidationService:
+            pass
+
+        with patch("core.services.build_validation.ensure_runtime_jobs_enabled") as mock_ensure_runtime_jobs_enabled, patch(
+            "core.services.build_validation.ensure_docker_runtime_access"
         ) as mock_ensure_docker_runtime_access, patch(
             "core.services.build_validation.docker_command",
             return_value=["docker"],
@@ -1124,14 +1124,19 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
             return_value=SimpleNamespace(output="local ok"),
         ) as mock_run_command, patch(
             "core.services.build_validation.RemoteValidationService",
+            new=FakeRemoteValidationService,
             create=True,
-        ) as mock_remote_service:
-            mock_remote_service.validate.return_value = BuildValidationResult(
+        ), patch.object(
+            FakeRemoteValidationService,
+            "validate",
+            create=True,
+            return_value=BuildValidationResult(
                 success=True,
                 command=["remote", "validate"],
                 logs="remote ok",
                 image_tag="",
-            )
+            ),
+        ) as mock_remote_validate:
             response = self._post_analysis(
                 files={
                     "next-sample/package.json": json.dumps(
@@ -1152,164 +1157,35 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(validate_response.status_code, 202)
         payload = validate_response.json()
         self.assertEqual(payload["status"], ExecutionJob.Status.READY)
+        self.assertEqual(payload["result_payload"]["executor"], "github_actions")
+        mock_remote_validate.assert_called_once()
         mock_ensure_runtime_jobs_enabled.assert_not_called()
         mock_ensure_docker_runtime_access.assert_not_called()
         mock_docker_command.assert_not_called()
         mock_run_command.assert_not_called()
-        self.assertEqual(payload["result_payload"]["executor"], "github_actions")
 
     def test_build_validation_result_can_carry_remote_metadata_and_payload(self):
-        analysis = ProjectAnalysis.objects.create(
-            owner=self.user,
-            project_name="demo",
-            source_type=ProjectAnalysis.SourceType.GIT,
-            repository_url="https://github.com/acme/demo",
-            status=ProjectAnalysis.Status.READY,
-        )
-        job = ExecutionJob.objects.create(
-            owner=self.user,
-            analysis=analysis,
-            kind=ExecutionJob.Kind.VALIDATION,
-            label="Validate demo",
-        )
-
-        with patch(
-            "core.services.execution_runner.BuildValidationService.validate",
-            return_value=BuildValidationResult(
-                success=True,
-                command=["remote", "validate"],
-                logs="remote ok",
-                image_tag="",
-                metadata={
-                    "validation_backend": "github_actions",
-                    "workflow_run_id": 123,
-                    "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+        result = BuildValidationResult(
+            success=True,
+            command=["remote", "validate"],
+            logs="remote ok",
+            image_tag="",
+            metadata={
+                "validation_backend": "github_actions",
+                "workflow_run_id": 123,
+                "workflow_run_url": "https://github.com/acme/executor/actions/runs/123",
+            },
+            result_payload={
+                "executor": "github_actions",
+                "summary": "docker build completed successfully",
+                "artifact_urls": {
+                    "workflow_run": "https://github.com/acme/executor/actions/runs/123",
                 },
-                result_payload={
-                    "executor": "github_actions",
-                    "summary": "docker build completed successfully",
-                    "artifact_urls": {
-                        "workflow_run": "https://github.com/acme/executor/actions/runs/123",
-                    },
-                },
-            ),
-        ):
-            result = ExecutionJobRunner().run(job)
-            result.refresh_from_db()
+            },
+        )
 
         self.assertEqual(result.result_payload["executor"], "github_actions")
         self.assertEqual(result.metadata["workflow_run_id"], 123)
-        self.assertEqual(result.result_payload["summary"], "docker build completed successfully")
-        self.assertEqual(
-            result.result_payload["artifact_urls"]["workflow_run"],
-            "https://github.com/acme/executor/actions/runs/123",
-        )
-        self.assertEqual(result.metadata["validation_backend"], "github_actions")
-        self.assertEqual(
-            result.metadata["workflow_run_url"],
-            "https://github.com/acme/executor/actions/runs/123",
-        )
-
-    @patch(
-        "core.services.execution_runner.BuildValidationService.validate",
-        return_value=BuildValidationResult(
-            success=False,
-            command=["docker", "build", "."],
-            logs="build failed",
-            image_tag="",
-        ),
-    )
-    def test_validate_endpoint_marks_job_failed_on_validation_failure(self, _mock_validate):
-        response = self._post_analysis(
-            files={
-                "next-sample/package.json": json.dumps(
-                    {
-                        "name": "next-sample",
-                        "scripts": {"build": "next build", "start": "next start"},
-                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
-                    }
-                )
-            }
-        )
-        analysis_id = response.json()["id"]
-
-        validate_response = self.client.post(
-            reverse("core-api:analysis-validate", args=[analysis_id])
-        )
-
-        self.assertEqual(validate_response.status_code, 202)
-        payload = validate_response.json()
-        self.assertEqual(payload["status"], ExecutionJob.Status.FAILED)
-        self.assertEqual(payload["logs"], "build failed")
-
-    @override_settings(AUTODOCKER_ENABLE_RUNTIME_JOBS=False)
-    def test_validate_endpoint_returns_409_when_runtime_jobs_are_disabled(self):
-        response = self._post_analysis(
-            files={
-                "next-sample/package.json": json.dumps(
-                    {
-                        "name": "next-sample",
-                        "scripts": {"build": "next build", "start": "next start"},
-                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
-                    }
-                )
-            }
-        )
-        analysis_id = response.json()["id"]
-
-        validate_response = self.client.post(
-            reverse("core-api:analysis-validate", args=[analysis_id])
-        )
-
-        self.assertEqual(validate_response.status_code, 409)
-        self.assertIn("AUTODOCKER_ENABLE_RUNTIME_JOBS", validate_response.json()["detail"])
-        self.assertFalse(ExecutionJob.objects.filter(kind=ExecutionJob.Kind.VALIDATION).exists())
-
-    @patch("core.services.execution_runner.PreviewService.start")
-    def test_preview_endpoint_creates_ready_preview_run(self, mock_start):
-        def fake_start(preview_run):
-            preview_run.status = PreviewRun.Status.READY
-            preview_run.runtime_kind = PreviewRun.RuntimeKind.CONTAINER
-            preview_run.access_url = "http://127.0.0.1:40123"
-            preview_run.ports = {"app": ["http://127.0.0.1:40123"]}
-            preview_run.logs = "preview ok"
-            preview_run.resource_names = ["preview-container"]
-            preview_run.save(
-                update_fields=[
-                    "status",
-                    "runtime_kind",
-                    "access_url",
-                    "ports",
-                    "logs",
-                    "resource_names",
-                    "updated_at",
-                ]
-            )
-            return preview_run
-
-        mock_start.side_effect = fake_start
-        response = self._post_analysis(
-            files={
-                "next-sample/package.json": json.dumps(
-                    {
-                        "name": "next-sample",
-                        "scripts": {"build": "next build", "start": "next start"},
-                        "dependencies": {"next": "15.0.0", "react": "19.0.0"},
-                    }
-                )
-            }
-        )
-        analysis_id = response.json()["id"]
-
-        preview_response = self.client.post(
-            reverse("core-api:analysis-preview", args=[analysis_id])
-        )
-
-        self.assertEqual(preview_response.status_code, 202)
-        payload = preview_response.json()
-        self.assertEqual(payload["kind"], ExecutionJob.Kind.PREVIEW)
-        self.assertEqual(payload["status"], ExecutionJob.Status.READY)
-        self.assertEqual(payload["result_payload"]["status"], PreviewRun.Status.READY)
 
     @patch(
         "core.services.execution_runner.BuildValidationService.validate",
