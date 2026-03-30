@@ -143,17 +143,44 @@ def staticfiles_storage_config() -> dict:
     }
 
 
+def deployment_role() -> str:
+    return (env("AUTODOCKER_DEPLOYMENT_ROLE", "app") or "app").strip().lower()
+
+
+def render_host_config() -> tuple[list[str], list[str]]:
+    allowed_hosts: list[str] = []
+    csrf_trusted_origins: list[str] = []
+
+    render_hostname = env("RENDER_EXTERNAL_HOSTNAME")
+    if render_hostname:
+        allowed_hosts.append(render_hostname)
+        csrf_trusted_origins.append(f"https://{render_hostname}")
+
+    render_url = env("RENDER_EXTERNAL_URL")
+    if render_url:
+        parsed = urlparse(render_url)
+        if parsed.hostname and parsed.hostname not in allowed_hosts:
+            allowed_hosts.append(parsed.hostname)
+        if parsed.scheme and parsed.netloc:
+            render_origin = f"{parsed.scheme}://{parsed.netloc}"
+            if render_origin not in csrf_trusted_origins:
+                csrf_trusted_origins.append(render_origin)
+
+    return allowed_hosts, csrf_trusted_origins
+
+
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-secret-key")
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
-AUTODOCKER_DEPLOYMENT_ROLE = env("AUTODOCKER_DEPLOYMENT_ROLE", "app")
+AUTODOCKER_DEPLOYMENT_ROLE = deployment_role()
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000")
-RENDER_EXTERNAL_HOSTNAME = env("RENDER_EXTERNAL_HOSTNAME")
-if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
-    render_origin = f"https://{RENDER_EXTERNAL_HOSTNAME}"
-    if render_origin not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(render_origin)
+render_allowed_hosts, render_csrf_trusted_origins = render_host_config()
+for host in render_allowed_hosts:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
+for origin in render_csrf_trusted_origins:
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -300,6 +327,9 @@ AUTODOCKER_PREVIEW_URL_STRATEGY = env(
 )
 AUTODOCKER_PREVIEW_RUNNER_REQUEST_TIMEOUT = int(
     env("AUTODOCKER_PREVIEW_RUNNER_REQUEST_TIMEOUT", "60")
+)
+AUTODOCKER_PREVIEW_KEEP_WORKSPACES = env_bool(
+    "AUTODOCKER_PREVIEW_KEEP_WORKSPACES", default=False
 )
 AUTODOCKER_VALIDATION_EXECUTOR_REPO = env(
     "AUTODOCKER_VALIDATION_EXECUTOR_REPO",

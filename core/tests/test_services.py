@@ -133,12 +133,58 @@ class DatabaseConfigTests(SimpleTestCase):
             self.assertEqual(project_settings.env("AUTODOCKER_PREVIEW_BACKEND", "local"), "local")
 
 
+class RenderHostConfigTests(SimpleTestCase):
+    def test_render_external_url_adds_hostname_and_csrf_origin(self):
+        with patch.dict(
+            os.environ,
+            {
+                "RENDER_EXTERNAL_URL": "https://autodocker-web.onrender.com",
+            },
+            clear=True,
+        ):
+            allowed_hosts, csrf_trusted_origins = project_settings.render_host_config()
+
+        self.assertIn("autodocker-web.onrender.com", allowed_hosts)
+        self.assertIn("https://autodocker-web.onrender.com", csrf_trusted_origins)
+
+    def test_render_external_hostname_takes_priority_when_present(self):
+        with patch.dict(
+            os.environ,
+            {
+                "RENDER_EXTERNAL_HOSTNAME": "autodocker-web.onrender.com",
+                "RENDER_EXTERNAL_URL": "https://ignored.onrender.com",
+            },
+            clear=True,
+        ):
+            allowed_hosts, csrf_trusted_origins = project_settings.render_host_config()
+
+        self.assertIn("autodocker-web.onrender.com", allowed_hosts)
+        self.assertIn("https://autodocker-web.onrender.com", csrf_trusted_origins)
+
+
 class DeploymentContractTests(SimpleTestCase):
     def test_dockerfile_uses_supported_python_runtime(self):
         dockerfile = (project_settings.BASE_DIR / "Dockerfile").read_text(encoding="utf-8")
 
         self.assertIn("FROM python:3.13-slim AS builder", dockerfile)
         self.assertIn("FROM python:3.13-slim AS runner", dockerfile)
+
+    def test_render_yaml_runs_migrate_at_startup_not_in_build(self):
+        render_yaml = (project_settings.BASE_DIR / "render.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("collectstatic --noinput", render_yaml)
+        self.assertNotIn("migrate --noinput", render_yaml.split("buildCommand:", maxsplit=1)[1].split("startCommand:", maxsplit=1)[0])
+        self.assertIn("python manage.py migrate --noinput && gunicorn", render_yaml)
+
+    def test_deployment_role_is_normalized(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AUTODOCKER_DEPLOYMENT_ROLE": " PREVIEW_RUNNER ",
+            },
+            clear=True,
+        ):
+            self.assertEqual(project_settings.deployment_role(), "preview_runner")
 
 
 class BuildValidationServiceTests(SimpleTestCase):
