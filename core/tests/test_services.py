@@ -169,14 +169,14 @@ class DeploymentContractTests(SimpleTestCase):
         self.assertIn("FROM python:3.13-slim AS builder", dockerfile)
         self.assertIn("FROM python:3.13-slim AS runner", dockerfile)
 
-    def test_render_yaml_runs_migrate_at_startup_not_in_build(self):
+    def test_render_yaml_uses_gunicorn_only_at_startup(self):
         render_yaml = (project_settings.BASE_DIR / "render.yaml").read_text(encoding="utf-8")
 
         self.assertIn("python3 -m pip install --upgrade pip", render_yaml)
         self.assertIn("python3 manage.py collectstatic --noinput", render_yaml)
         self.assertNotIn("migrate --noinput", render_yaml.split("buildCommand:", maxsplit=1)[1].split("startCommand:", maxsplit=1)[0])
-        self.assertIn("${VENV_ROOT}/bin/python manage.py migrate --noinput", render_yaml)
-        self.assertIn("${VENV_ROOT}/bin/gunicorn config.wsgi:application", render_yaml)
+        self.assertIn("startCommand: gunicorn config.wsgi:application", render_yaml)
+        self.assertNotIn("migrate --noinput", render_yaml.split("startCommand:", maxsplit=1)[1])
 
     def test_deployment_role_is_normalized(self):
         with patch.dict(
