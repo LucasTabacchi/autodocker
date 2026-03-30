@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import json
 import socket
 import time
@@ -12,6 +13,7 @@ from django.utils import timezone
 from core.models import PreviewRun, ProjectAnalysis
 from core.services.ingestion import cleanup_workspace, overlay_generated_artifacts, prepare_source_workspace
 from core.services.remote_preview import RemotePreviewService
+from core.services.preview_runner import PreviewRunnerError
 from core.services.runtime import (
     CommandExecutionError,
     docker_command,
@@ -21,6 +23,8 @@ from core.services.runtime import (
     preview_backend_name,
     run_command,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PreviewService:
@@ -100,7 +104,15 @@ class PreviewService:
 
     def refresh_logs(self, preview_run: PreviewRun) -> PreviewRun:
         if preview_backend_name() == "remote_runner":
-            return RemotePreviewService().refresh_logs(preview_run)
+            try:
+                return RemotePreviewService().refresh_logs(preview_run)
+            except PreviewRunnerError as exc:
+                logger.warning(
+                    "No se pudieron refrescar los logs de la preview remota %s: %s",
+                    preview_run.id,
+                    exc,
+                )
+                return preview_run
         workspace = Path(preview_run.workspace_path) if preview_run.workspace_path else None
         if not workspace or not workspace.exists():
             return preview_run

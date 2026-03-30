@@ -41,6 +41,7 @@ from core.services.ingestion import cleanup_workspace, prepare_source_workspace
 from core.services.validation_bundle import ValidationBundleService
 from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
+from core.services.preview_runner import PreviewRunnerError
 from core.services.runtime import CommandExecutionError, docker_compose_command
 from core.test_support import AnalysisApiTestSupport
 
@@ -1395,6 +1396,38 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(payload["status"], PreviewRun.Status.READY)
         self.assertEqual(payload["logs"], "remote preview logs")
         self.assertEqual(payload["access_url"], "https://prv-demo.previews.example.com")
+        mock_refresh_logs.assert_called_once()
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview.RemotePreviewService.refresh_logs", side_effect=PreviewRunnerError("runner 500"))
+    def test_preview_detail_keeps_returning_preview_when_remote_runner_refresh_fails(self, mock_refresh_logs):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        preview = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.RUNNING,
+            runtime_kind=PreviewRun.RuntimeKind.COMPOSE,
+            resource_names=["prv-demo-web"],
+            logs="stale remote logs",
+        )
+
+        response = self.client.get(reverse("core-api:preview-detail", args=[preview.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.RUNNING)
+        self.assertEqual(payload["logs"], "stale remote logs")
         mock_refresh_logs.assert_called_once()
 
     @override_settings(
