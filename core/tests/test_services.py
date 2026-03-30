@@ -175,7 +175,8 @@ class DeploymentContractTests(SimpleTestCase):
         self.assertIn("python3 -m pip install --upgrade pip", render_yaml)
         self.assertIn("python3 manage.py collectstatic --noinput", render_yaml)
         self.assertNotIn("migrate --noinput", render_yaml.split("buildCommand:", maxsplit=1)[1].split("startCommand:", maxsplit=1)[0])
-        self.assertIn("python3 manage.py migrate --noinput && gunicorn", render_yaml)
+        self.assertIn("${VENV_ROOT}/bin/python manage.py migrate --noinput", render_yaml)
+        self.assertIn("${VENV_ROOT}/bin/gunicorn config.wsgi:application", render_yaml)
 
     def test_deployment_role_is_normalized(self):
         with patch.dict(
