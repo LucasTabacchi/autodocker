@@ -709,6 +709,29 @@ class ArtifactGeneratorTests(SimpleTestCase):
             self.assertIn("volumes:", compose.content)
             self.assertIn("AUTODOCKER_PROFILE", compose.content)
 
+    def test_django_python_dockerfile_runs_migrations_before_gunicorn(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "requirements.txt").write_text(
+                "django\npsycopg2-binary\ngunicorn\n",
+                encoding="utf-8",
+            )
+            (root / "manage.py").write_text("print('manage')", encoding="utf-8")
+            config_dir = root / "config"
+            config_dir.mkdir()
+            (config_dir / "settings.py").write_text("SECRET_KEY = 'test'", encoding="utf-8")
+
+            detection = StackDetector().analyze(root)
+            generation = ArtifactGenerator().generate(detection)
+            dockerfile = next(
+                artifact for artifact in generation.artifacts if artifact.kind == "dockerfile"
+            )
+
+            self.assertIn(
+                "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000",
+                dockerfile.content,
+            )
+
     def test_generator_embeds_healthcheck_and_extra_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

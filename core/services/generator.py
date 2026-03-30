@@ -286,6 +286,8 @@ class ArtifactGenerator:
             if profile == self.DEVELOPMENT
             else component.start_command or "python main.py"
         )
+        if profile != self.DEVELOPMENT and component.framework == "Django":
+            start_command = f"python manage.py migrate --noinput && {start_command}"
         return self._join(
             [
                 "FROM python:3.12-slim",
