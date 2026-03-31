@@ -9,7 +9,7 @@ services:
       RUN_AS_ROOT: "true"
       RUN_MIGRATIONS: "true"
       RUN_COLLECTSTATIC: "true"
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+    command: /bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:$${PORT:-8000} --workers $${WEB_CONCURRENCY:-3} --timeout 120"
     ports:
       - "8000:8000"
     restart: unless-stopped

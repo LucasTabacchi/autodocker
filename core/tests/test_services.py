@@ -37,6 +37,7 @@ from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
 from core.services.contracts import GeneratedArtifactSpec
 from core.services.ingestion import cleanup_workspace, prepare_source_workspace
+from core.services.deploy_targets import DeployTargetArtifactService
 from core.services.validation_bundle import ValidationBundleService
 from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
@@ -168,15 +169,69 @@ class DeploymentContractTests(SimpleTestCase):
 
         self.assertIn("FROM python:3.13-slim AS builder", dockerfile)
         self.assertIn("FROM python:3.13-slim AS runner", dockerfile)
+        self.assertIn('CMD ["/bin/sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}', dockerfile)
 
-    def test_render_yaml_uses_gunicorn_only_at_startup(self):
+    def test_render_yaml_uses_docker_runtime_and_predeploy_migrations(self):
         render_yaml = (project_settings.BASE_DIR / "render.yaml").read_text(encoding="utf-8")
 
-        self.assertIn("python3 -m pip install --upgrade pip", render_yaml)
-        self.assertIn("python3 manage.py collectstatic --noinput", render_yaml)
-        self.assertNotIn("migrate --noinput", render_yaml.split("buildCommand:", maxsplit=1)[1].split("startCommand:", maxsplit=1)[0])
-        self.assertIn("startCommand: gunicorn config.wsgi:application", render_yaml)
-        self.assertNotIn("migrate --noinput", render_yaml.split("startCommand:", maxsplit=1)[1])
+        self.assertIn("runtime: docker", render_yaml)
+        self.assertIn("dockerfilePath: ./Dockerfile", render_yaml)
+        self.assertIn("preDeployCommand: python manage.py migrate --noinput", render_yaml)
+        self.assertNotIn("buildCommand:", render_yaml)
+        self.assertNotIn("startCommand:", render_yaml)
+
+    def test_docker_compose_dev_uses_port_and_worker_env_defaults(self):
+        compose = (project_settings.BASE_DIR / "docker-compose.yml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '/bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:$${PORT:-8000} --workers $${WEB_CONCURRENCY:-3} --timeout 120"',
+            compose,
+        )
+
+    def test_deploy_target_service_generates_docker_blueprint_for_django(self):
+        detection = SimpleNamespace(
+            project_name="Demo App",
+            components=[
+                SimpleNamespace(
+                    path=".",
+                    framework="Django",
+                    probable_ports=[8000],
+                )
+            ],
+            primary_component=lambda: None,
+        )
+        detection.primary_component = lambda: detection.components[0]
+
+        artifacts, _report = DeployTargetArtifactService().generate(detection, "production")
+        render_blueprint = next(artifact.content for artifact in artifacts if artifact.path == "render.yaml")
+
+        self.assertIn("runtime: docker", render_blueprint)
+        self.assertIn("dockerfilePath: ./Dockerfile", render_blueprint)
+        self.assertIn("healthCheckPath: /health/", render_blueprint)
+        self.assertIn("preDeployCommand: python manage.py migrate --noinput", render_blueprint)
+        self.assertNotIn("startCommand:", render_blueprint)
+
+    def test_deploy_target_service_omits_migration_hook_for_non_django_components(self):
+        detection = SimpleNamespace(
+            project_name="Demo App",
+            components=[
+                SimpleNamespace(
+                    path="apps/web",
+                    framework="Next.js",
+                    probable_ports=[3000],
+                )
+            ],
+            primary_component=lambda: None,
+        )
+        detection.primary_component = lambda: detection.components[0]
+
+        artifacts, _report = DeployTargetArtifactService().generate(detection, "production")
+        render_blueprint = next(artifact.content for artifact in artifacts if artifact.path == "render.yaml")
+
+        self.assertIn("runtime: docker", render_blueprint)
+        self.assertIn("dockerfilePath: ./apps/web/Dockerfile", render_blueprint)
+        self.assertNotIn("preDeployCommand:", render_blueprint)
+        self.assertNotIn("startCommand:", render_blueprint)
 
     def test_deployment_role_is_normalized(self):
         with patch.dict(
