@@ -7,6 +7,7 @@ services:
       - .env.docker
     environment:
       RUN_AS_ROOT: "true"
+      RUN_WAIT_FOR_DATABASE: "true"
       RUN_MIGRATIONS: "true"
       RUN_COLLECTSTATIC: "true"
     command: /bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:$${PORT:-8000} --workers $${WEB_CONCURRENCY:-3} --timeout 120"
@@ -30,6 +31,7 @@ services:
     environment:
       C_FORCE_ROOT: "1"
       RUN_AS_ROOT: "true"
+      RUN_WAIT_FOR_DATABASE: "false"
       RUN_MIGRATIONS: "false"
       RUN_COLLECTSTATIC: "false"
     command: celery -A config worker -l info

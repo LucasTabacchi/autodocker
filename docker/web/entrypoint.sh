@@ -28,7 +28,8 @@ if [ "$(id -u)" = "0" ]; then
   chown -R appuser:appuser /app/media /app/staticfiles
 fi
 
-python - <<'PY'
+if [ "${RUN_WAIT_FOR_DATABASE:-false}" = "true" ]; then
+  python - <<'PY'
 import os
 import time
 
@@ -53,6 +54,7 @@ for attempt in range(30):
 else:
     raise SystemExit("Database did not become ready in time.")
 PY
+fi
 
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   run_as_appuser_noexec python manage.py migrate --noinput

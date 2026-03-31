@@ -187,6 +187,22 @@ class DeploymentContractTests(SimpleTestCase):
             '/bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:$${PORT:-8000} --workers $${WEB_CONCURRENCY:-3} --timeout 120"',
             compose,
         )
+        self.assertIn("RUN_WAIT_FOR_DATABASE: \"true\"", compose)
+
+    def test_docker_compose_prod_uses_port_and_worker_env_defaults(self):
+        compose = (project_settings.BASE_DIR / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '/bin/sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:$${PORT:-8000} --workers $${WEB_CONCURRENCY:-3} --timeout 120"',
+            compose,
+        )
+        self.assertIn("RUN_WAIT_FOR_DATABASE: \"true\"", compose)
+
+    def test_entrypoint_waits_for_database_only_when_enabled(self):
+        entrypoint = (project_settings.BASE_DIR / "docker/web/entrypoint.sh").read_text(encoding="utf-8")
+
+        self.assertIn('if [ "${RUN_WAIT_FOR_DATABASE:-false}" = "true" ]; then', entrypoint)
+        self.assertIn('raise SystemExit("Database did not become ready in time.")', entrypoint)
 
     def test_deploy_target_service_generates_docker_blueprint_for_django(self):
         detection = SimpleNamespace(
