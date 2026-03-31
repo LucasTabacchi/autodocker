@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import yaml
+from django.conf import settings
 from django.utils import timezone
 
 from core.models import PreviewRun, ProjectAnalysis
@@ -160,6 +161,7 @@ class PreviewService:
             preview_compose_path.name,
             service_urls,
         )
+        service_urls = self._publicize_service_urls(preview_run, service_urls, primary_service_name="web")
         logs = self._collect_compose_logs(source_root, preview_run, preview_compose_path.name)
         preview_run.status = PreviewRun.Status.READY if service_urls else PreviewRun.Status.FAILED
         preview_run.runtime_kind = PreviewRun.RuntimeKind.COMPOSE
@@ -288,6 +290,7 @@ class PreviewService:
         )
         port_result = run_command([*docker_base, "port", container_name], source_root, timeout=120, check=False)
         ports = self._parse_docker_port_output(port_result.output)
+        ports = self._publicize_service_urls(preview_run, ports, primary_service_name="app")
         log_result = run_command(
             [*docker_base, "logs", "--tail", "200", container_name],
             source_root,
@@ -448,6 +451,29 @@ class PreviewService:
                 ports["app"].append(f"http://127.0.0.1:{host_port}")
         return ports
 
+    def _publicize_service_urls(
+        self,
+        preview_run: PreviewRun,
+        service_urls: dict[str, list[str]],
+        *,
+        primary_service_name: str | None = None,
+    ) -> dict[str, list[str]]:
+        if not self._uses_public_preview_urls():
+            return service_urls
+
+        public_urls: dict[str, list[str]] = {}
+        for service_name, urls in service_urls.items():
+            public_url = self._public_service_url(
+                preview_run,
+                service_name,
+                primary_service_name=primary_service_name,
+            )
+            if not public_url:
+                continue
+            public_urls[service_name] = [public_url for _ in (urls or [public_url])]
+
+        return public_urls or service_urls
+
     def _container_port_from_compose(self, port_definition) -> int | None:
         if isinstance(port_definition, int):
             return port_definition
@@ -467,6 +493,46 @@ class PreviewService:
             if urls:
                 return urls[0]
         return ""
+
+    def _uses_public_preview_urls(self) -> bool:
+        return bool(self._preview_public_base_domain()) and self._preview_url_strategy() == "runner_managed"
+
+    def _preview_public_base_domain(self) -> str:
+        return (getattr(settings, "AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN", "") or "").strip().strip(".")
+
+    def _preview_url_strategy(self) -> str:
+        return (getattr(settings, "AUTODOCKER_PREVIEW_URL_STRATEGY", "runner_managed") or "runner_managed").strip().lower()
+
+    def _preview_slug(self, preview_run: PreviewRun) -> str:
+        preview_id = str(preview_run.id).replace("-", "")
+        return f"prv-{preview_id[:8]}"
+
+    def _slugify_host_label(self, label: str) -> str:
+        slug = "".join(character if character.isalnum() else "-" for character in label.lower())
+        slug = "-".join(part for part in slug.split("-") if part)
+        return slug or "service"
+
+    def _public_service_url(
+        self,
+        preview_run: PreviewRun,
+        service_name: str | None = None,
+        *,
+        primary_service_name: str | None = None,
+    ) -> str:
+        if not self._uses_public_preview_urls():
+            return ""
+
+        domain = self._preview_public_base_domain()
+        if not domain:
+            return ""
+
+        preview_slug = self._preview_slug(preview_run)
+        if service_name and service_name not in {"web", primary_service_name}:
+            host_prefix = self._slugify_host_label(service_name)
+            host = f"{host_prefix}-{preview_slug}.{domain}"
+        else:
+            host = f"{preview_slug}.{domain}"
+        return f"https://{host}"
 
     def _compose_project_name(self, preview_run: PreviewRun) -> str:
         return f"autodocker-preview-{str(preview_run.id).replace('-', '')[:10]}"

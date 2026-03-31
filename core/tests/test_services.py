@@ -980,6 +980,41 @@ class PreviewServiceTests(SimpleTestCase):
             self.assertNotIn("postgres", service_urls)
             self.assertNotIn("redis", service_urls)
 
+    @override_settings(
+        AUTODOCKER_PREVIEW_URL_STRATEGY="runner_managed",
+        AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN="previews.example.com",
+    )
+    def test_publicize_service_urls_uses_public_preview_domain(self):
+        service = PreviewService()
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+
+        public_urls = service._publicize_service_urls(
+            preview_run,
+            {
+                "web": ["http://127.0.0.1:41000"],
+                "api": ["http://127.0.0.1:41001"],
+            },
+        )
+
+        self.assertEqual(public_urls["web"], ["https://prv-11111111.previews.example.com"])
+        self.assertEqual(public_urls["api"], ["https://api-prv-11111111.previews.example.com"])
+
+    @override_settings(
+        AUTODOCKER_PREVIEW_URL_STRATEGY="runner_managed",
+        AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN="previews.example.com",
+    )
+    def test_publicize_service_urls_keeps_single_container_preview_at_primary_slug(self):
+        service = PreviewService()
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+
+        public_urls = service._publicize_service_urls(
+            preview_run,
+            {"app": ["http://127.0.0.1:41000"]},
+            primary_service_name="app",
+        )
+
+        self.assertEqual(public_urls["app"], ["https://prv-11111111.previews.example.com"])
+
     def test_filter_accessible_service_urls_keeps_only_running_and_healthy_targets(self):
         service = PreviewService()
         preview_run = SimpleNamespace(id="preview-1234")
