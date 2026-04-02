@@ -1,0 +1,11 @@
+{
+    email ops@example.com
+}
+
+# Optional landing page for the bare previews domain.
+previews.example.com {
+    respond "AutoDocker preview runner online" 200
+}
+
+# Dynamic per-preview routes written by the preview runner.
+import /etc/caddy/routes/*.caddy

@@ -12,6 +12,7 @@ from django.views.generic import FormView, TemplateView
 
 from core.forms import AnalysisSubmissionForm, SignUpForm
 from core.models import ProjectAnalysis, Workspace
+from core.services.runtime import preview_runtime_capability
 from core.services.workspaces import default_workspace_for_user, ensure_personal_workspace
 
 
@@ -24,6 +25,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context["submission_form"] = AnalysisSubmissionForm()
         context["workspaces"] = Workspace.objects.for_user(self.request.user).prefetch_related("memberships__user")
         context["active_workspace"] = active_workspace
+        context["preview_runtime_capability"] = preview_runtime_capability()
         analyses = ProjectAnalysis.objects.with_related().for_user(self.request.user)
         if active_workspace:
             analyses = analyses.filter(workspace=active_workspace)

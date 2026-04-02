@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from core.models import PreviewRunnerSession
 from core.services.ingestion import cleanup_workspace
+from core.services.preview_publication import PreviewPublicationService
 from core.services.preview import PreviewService
 
 
@@ -23,10 +24,17 @@ class PreviewRunnerSessionError(RuntimeError):
 
 class PreviewRunnerSessionService:
     def start(self, session: PreviewRunnerSession) -> PreviewRunnerSession:
+        self.reconcile()
+        self.ensure_capacity_available(including_new_session=False)
         workspace_root = Path(tempfile.mkdtemp(prefix="autodocker-runner-"))
         source_root = workspace_root / "source"
         source_root.mkdir(parents=True, exist_ok=True)
 
+        session.metadata = {
+            **(session.metadata or {}),
+            "failure_reason": "",
+            "last_poll_at": timezone.now().isoformat(),
+        }
         session.status = PreviewRunnerSession.Status.STARTING
         session.started_at = timezone.now()
         session.finished_at = None
@@ -41,6 +49,7 @@ class PreviewRunnerSessionService:
                 "workspace_root",
                 "workspace_path",
                 "expires_at",
+                "metadata",
                 "updated_at",
             ]
         )
@@ -57,22 +66,43 @@ class PreviewRunnerSessionService:
             )
             PreviewService().start_from_workspace(session, analysis_like, source_root)
             session.expires_at = timezone.now() + timedelta(seconds=self._ttl_seconds(session))
-            session.save(update_fields=["expires_at", "updated_at"])
+            session.metadata = {
+                **(session.metadata or {}),
+                "last_poll_at": timezone.now().isoformat(),
+                "failure_reason": "",
+            }
+            session.save(update_fields=["expires_at", "metadata", "updated_at"])
             return session
         except Exception as exc:
             session.status = PreviewRunnerSession.Status.FAILED
             session.logs = str(exc)
             session.finished_at = timezone.now()
-            session.save(update_fields=["status", "logs", "finished_at", "updated_at"])
-            self._cleanup_workspace(session)
+            session.metadata = {
+                **(session.metadata or {}),
+                "failure_reason": str(exc),
+                "last_poll_at": timezone.now().isoformat(),
+            }
+            session.save(update_fields=["status", "logs", "finished_at", "metadata", "updated_at"])
+            if not settings.AUTODOCKER_PREVIEW_KEEP_WORKSPACES:
+                self._cleanup_workspace(session)
             return session
 
     def refresh_logs(self, session: PreviewRunnerSession) -> PreviewRunnerSession:
         PreviewService().refresh_logs(session)
+        session.metadata = {
+            **(session.metadata or {}),
+            "last_poll_at": timezone.now().isoformat(),
+        }
+        session.save(update_fields=["metadata", "updated_at"])
         return session
 
     def stop(self, session: PreviewRunnerSession) -> PreviewRunnerSession:
         PreviewService().stop(session)
+        session.metadata = {
+            **(session.metadata or {}),
+            "last_poll_at": timezone.now().isoformat(),
+        }
+        session.save(update_fields=["metadata", "updated_at"])
         return session
 
     def expire(self, session: PreviewRunnerSession) -> PreviewRunnerSession:
@@ -81,6 +111,44 @@ class PreviewRunnerSessionService:
         session.finished_at = timezone.now()
         session.save(update_fields=["status", "finished_at", "updated_at"])
         return session
+
+    def reconcile(self) -> int:
+        reconciled = 0
+        now = timezone.now()
+        expirable_statuses = [
+            PreviewRunnerSession.Status.QUEUED,
+            PreviewRunnerSession.Status.STARTING,
+            PreviewRunnerSession.Status.READY,
+        ]
+        for session in PreviewRunnerSession.objects.filter(
+            status__in=expirable_statuses,
+            expires_at__isnull=False,
+            expires_at__lt=now,
+        ):
+            self.expire(session)
+            reconciled += 1
+        active_preview_ids = list(
+            PreviewRunnerSession.objects.filter(status__in=expirable_statuses).values_list(
+                "preview_id",
+                flat=True,
+            )
+        )
+        PreviewPublicationService().reconcile(active_preview_ids)
+        return reconciled
+
+    def ensure_capacity_available(self, *, including_new_session: bool = True) -> None:
+        active_statuses = [
+            PreviewRunnerSession.Status.QUEUED,
+            PreviewRunnerSession.Status.STARTING,
+            PreviewRunnerSession.Status.READY,
+        ]
+        active_count = PreviewRunnerSession.objects.filter(status__in=active_statuses).count()
+        limit = settings.AUTODOCKER_PREVIEW_RUNNER_MAX_ACTIVE_SESSIONS
+        exceeds_limit = active_count >= limit if including_new_session else active_count > limit
+        if exceeds_limit:
+            raise PreviewRunnerSessionError(
+                "Se alcanzó el límite de previews activas para este runner."
+            )
 
     def _download_bundle(self, bundle_url: str) -> bytes:
         req = request.Request(bundle_url, method="GET")
@@ -109,7 +177,9 @@ class PreviewRunnerSessionService:
 
     def _ttl_seconds(self, session: PreviewRunnerSession) -> int:
         requested = max(int(session.requested_ttl_seconds or 0), 1)
-        return min(requested, settings.AUTODOCKER_PREVIEW_TTL_SECONDS)
+        configured_default = max(int(settings.AUTODOCKER_PREVIEW_TTL_SECONDS), 1)
+        maximum = max(int(getattr(settings, "AUTODOCKER_PREVIEW_MAX_TTL_SECONDS", configured_default)), 1)
+        return min(requested, configured_default, maximum)
 
     def _cleanup_workspace(self, session: PreviewRunnerSession) -> None:
         if session.workspace_root:

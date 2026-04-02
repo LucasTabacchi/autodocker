@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconcile AutoDocker Preview Runner Sessions
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=autodocker
+Group=autodocker
+WorkingDirectory=/srv/preview-runner/app
+EnvironmentFile=/srv/preview-runner/env/preview-runner.env
+ExecStart=/srv/preview-runner/app/.venv/bin/python manage.py reconcile_preview_runner_sessions

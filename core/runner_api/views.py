@@ -41,6 +41,8 @@ class PreviewRunnerAuthenticatedApiView(APIView):
 
 class PreviewRunnerSessionListCreateApiView(PreviewRunnerAuthenticatedApiView):
     def post(self, request):
+        service = PreviewRunnerSessionService()
+        service.reconcile()
         serializer = PreviewRunnerSessionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
@@ -49,6 +51,10 @@ class PreviewRunnerSessionListCreateApiView(PreviewRunnerAuthenticatedApiView):
             preview_id=validated["preview_id"]
         ).first()
         if session is None:
+            try:
+                service.ensure_capacity_available(including_new_session=True)
+            except Exception as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
             session = PreviewRunnerSession.objects.create(
                 preview_id=validated["preview_id"],
                 analysis_id=validated["analysis_id"],
@@ -70,7 +76,12 @@ class PreviewRunnerSessionListCreateApiView(PreviewRunnerAuthenticatedApiView):
         )
 
     def _ttl_seconds(self, requested_ttl_seconds: int) -> int:
-        return min(int(requested_ttl_seconds), settings.AUTODOCKER_PREVIEW_TTL_SECONDS)
+        configured_default = max(int(settings.AUTODOCKER_PREVIEW_TTL_SECONDS), 1)
+        maximum = max(
+            int(getattr(settings, "AUTODOCKER_PREVIEW_MAX_TTL_SECONDS", configured_default)),
+            1,
+        )
+        return min(max(int(requested_ttl_seconds), 1), configured_default, maximum)
 
 
 class PreviewRunnerSessionDetailApiView(PreviewRunnerAuthenticatedApiView):
@@ -82,7 +93,9 @@ class PreviewRunnerSessionDetailApiView(PreviewRunnerAuthenticatedApiView):
 class PreviewRunnerSessionLogsApiView(PreviewRunnerAuthenticatedApiView):
     def get(self, request, preview_id):
         session = get_object_or_404(PreviewRunnerSession, preview_id=preview_id)
-        PreviewRunnerSessionService().refresh_logs(session)
+        service = PreviewRunnerSessionService()
+        service.reconcile()
+        service.refresh_logs(session)
         session.refresh_from_db()
         return Response(
             {
@@ -95,7 +108,9 @@ class PreviewRunnerSessionLogsApiView(PreviewRunnerAuthenticatedApiView):
 class PreviewRunnerSessionStopApiView(PreviewRunnerAuthenticatedApiView):
     def post(self, request, preview_id):
         session = get_object_or_404(PreviewRunnerSession, preview_id=preview_id)
-        PreviewRunnerSessionService().stop(session)
+        service = PreviewRunnerSessionService()
+        service.reconcile()
+        service.stop(session)
         session.refresh_from_db()
         return Response(
             {

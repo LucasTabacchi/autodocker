@@ -6,6 +6,7 @@ import os
 import subprocess
 import tempfile
 import zipfile
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -14,15 +15,18 @@ from urllib import error
 import yaml
 from config import settings as project_settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core import mail
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from core.models import (
     ArtifactSnapshot,
     ExecutionJob,
     ExternalRepoConnection,
     GeneratedArtifact,
     PreviewRun,
+    PreviewRunnerSession,
     ProjectAnalysis,
     Workspace,
     WorkspaceInvitation,
@@ -41,6 +45,12 @@ from core.services.deploy_targets import DeployTargetArtifactService
 from core.services.validation_bundle import ValidationBundleService
 from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
+from core.services.remote_preview import RemotePreviewService
+from core.services.preview_runner_sessions import (
+    PreviewRunnerSessionError,
+    PreviewRunnerSessionService,
+)
+from core.services.preview_publication import PreviewPublicationService
 from core.services.preview_bundle import PreviewBundleService
 from core.services.preview_runner import PreviewRunnerClient, PreviewRunnerError
 from core.services.runtime import (
@@ -1066,7 +1076,296 @@ class PreviewRunnerClientTests(SimpleTestCase):
             PreviewRunnerClient().stop_preview("preview-123")
 
 
+class RemotePreviewServiceTests(SimpleTestCase):
+    @override_settings(AUTODOCKER_APP_BASE_URL="http://127.0.0.1:8000")
+    def test_builds_absolute_bundle_url_from_relative_storage_path(self):
+        service = RemotePreviewService()
+
+        absolute = service._absolute_bundle_url("/media/preview-bundles/demo/bundle.zip")
+
+        self.assertEqual(
+            absolute,
+            "http://127.0.0.1:8000/media/preview-bundles/demo/bundle.zip",
+        )
+
+
+class LocalPreviewSmokeServiceTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="smoke-user",
+            password="test-pass-123",
+        )
+
+    def test_prepare_analysis_injects_preview_artifacts_by_default(self):
+        from core.services.local_preview_smoke import LocalPreviewSmokeService
+
+        analysis = LocalPreviewSmokeService().prepare_analysis(
+            owner=self.user,
+            repository_url="https://github.com/acme/demo-app",
+        )
+
+        self.assertEqual(analysis.status, ProjectAnalysis.Status.READY)
+        self.assertEqual(analysis.source_type, ProjectAnalysis.SourceType.GIT)
+        self.assertEqual(analysis.repository_url, "https://github.com/acme/demo-app")
+        self.assertEqual(
+            analysis.analysis_payload["components"],
+            [{"name": "web", "path": ".", "framework": "Node.js"}],
+        )
+        artifact_paths = set(analysis.artifacts.values_list("path", flat=True))
+        self.assertEqual(
+            artifact_paths,
+            {"Dockerfile", "autodocker-smoke-server.js", "docker-compose.yml"},
+        )
+        dockerfile = analysis.artifacts.get(path="Dockerfile")
+        self.assertIn('CMD ["node", "autodocker-smoke-server.js"]', dockerfile.content)
+        smoke_server = analysis.artifacts.get(path="autodocker-smoke-server.js")
+        self.assertIn("preview smoke ok", smoke_server.content)
+        compose = analysis.artifacts.get(path="docker-compose.yml")
+        self.assertIn("services:", compose.content)
+        self.assertIn("build: .", compose.content)
+        self.assertIn('"3000"', compose.content)
+
+    def test_prepare_analysis_can_skip_injected_artifacts(self):
+        from core.services.local_preview_smoke import LocalPreviewSmokeService
+
+        analysis = LocalPreviewSmokeService().prepare_analysis(
+            owner=self.user,
+            repository_url="https://github.com/acme/demo-app",
+            use_repo_artifacts=True,
+        )
+
+        self.assertEqual(analysis.status, ProjectAnalysis.Status.READY)
+        self.assertEqual(analysis.artifacts.count(), 0)
+
+
+class PrepareLocalPreviewSmokeCommandTests(TestCase):
+    def test_command_creates_fixture_analysis_and_returns_json(self):
+        stdout = io.StringIO()
+
+        call_command(
+            "prepare_local_preview_smoke",
+            repository_url="https://github.com/acme/demo-app",
+            project_name="demo-app",
+            stdout=stdout,
+        )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["username"], "local-preview-smoke")
+        self.assertEqual(payload["password"], "test-pass-123")
+        self.assertTrue(payload["analysis_id"])
+        analysis = ProjectAnalysis.objects.get(id=payload["analysis_id"])
+        self.assertEqual(analysis.project_name, "demo-app")
+        self.assertEqual(
+            set(analysis.artifacts.values_list("path", flat=True)),
+            {"Dockerfile", "autodocker-smoke-server.js", "docker-compose.yml"},
+        )
+
+    def test_command_supports_repo_artifact_mode(self):
+        stdout = io.StringIO()
+
+        call_command(
+            "prepare_local_preview_smoke",
+            repository_url="https://github.com/acme/demo-app",
+            use_repo_artifacts=True,
+            stdout=stdout,
+        )
+
+        payload = json.loads(stdout.getvalue())
+        analysis = ProjectAnalysis.objects.get(id=payload["analysis_id"])
+        self.assertEqual(analysis.artifacts.count(), 0)
+
+
+@override_settings(
+    AUTODOCKER_PREVIEW_URL_STRATEGY="runner_managed",
+    AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN="previews.example.com",
+    AUTODOCKER_PREVIEW_CADDY_ENABLED=True,
+    AUTODOCKER_PREVIEW_CADDY_CONFIG_PATH="/tmp/Caddyfile",
+)
+class PreviewPublicationServiceTests(SimpleTestCase):
+    def test_publish_writes_caddy_route_and_returns_public_url(self):
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+        service_urls = {"web": ["http://127.0.0.1:41000"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir, override_settings(
+            AUTODOCKER_PREVIEW_CADDY_ROUTES_DIR=temp_dir,
+        ), patch(
+            "core.services.preview_publication.run_command",
+            return_value=SimpleNamespace(output="reloaded"),
+        ) as mock_run:
+            published = PreviewPublicationService().publish(preview_run, service_urls)
+            route_path = Path(temp_dir) / "prv-111111111111.caddy"
+            self.assertEqual(
+                published,
+                {"web": ["https://prv-111111111111.previews.example.com"]},
+            )
+            self.assertTrue(route_path.exists())
+            route_content = route_path.read_text(encoding="utf-8")
+            self.assertIn("prv-111111111111.previews.example.com", route_content)
+            self.assertIn("reverse_proxy 127.0.0.1:41000", route_content)
+            mock_run.assert_called_once()
+
+    def test_unpublish_removes_existing_caddy_route(self):
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+
+        with tempfile.TemporaryDirectory() as temp_dir, override_settings(
+            AUTODOCKER_PREVIEW_CADDY_ROUTES_DIR=temp_dir,
+        ), patch(
+            "core.services.preview_publication.run_command",
+            return_value=SimpleNamespace(output="reloaded"),
+        ) as mock_run:
+            route_path = Path(temp_dir) / "prv-111111111111.caddy"
+            route_path.write_text("test", encoding="utf-8")
+
+            PreviewPublicationService().unpublish(preview_run)
+
+        self.assertFalse(route_path.exists())
+        mock_run.assert_called_once()
+
+    def test_reconcile_removes_orphaned_caddy_routes(self):
+        active_preview_id = "11111111-1111-4111-8111-111111111111"
+        orphan_path = None
+        with tempfile.TemporaryDirectory() as temp_dir, override_settings(
+            AUTODOCKER_PREVIEW_CADDY_ROUTES_DIR=temp_dir,
+        ), patch(
+            "core.services.preview_publication.run_command",
+            return_value=SimpleNamespace(output="reloaded"),
+        ) as mock_run:
+            active_path = Path(temp_dir) / "prv-111111111111.caddy"
+            orphan_path = Path(temp_dir) / "prv-222222222222.caddy"
+            active_path.write_text("active", encoding="utf-8")
+            orphan_path.write_text("orphan", encoding="utf-8")
+
+            removed = PreviewPublicationService().reconcile([active_preview_id])
+            self.assertEqual(removed, 1)
+            self.assertTrue(active_path.exists())
+            self.assertFalse(orphan_path.exists())
+            mock_run.assert_called_once()
+
+
 class PreviewServiceTests(SimpleTestCase):
+    def test_write_preview_override_exposes_only_one_public_service_using_priority(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "docker-compose.yml").write_text(
+                "\n".join(
+                    [
+                        "services:",
+                        "  frontend:",
+                        "    ports:",
+                        '      - "3002:3000"',
+                        "  web:",
+                        "    ports:",
+                        '      - "3000:3000"',
+                        "  api:",
+                        "    ports:",
+                        '      - "3001:3000"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            analysis = SimpleNamespace(
+                analysis_payload={
+                    "components": [
+                        {"name": "frontend"},
+                        {"name": "web"},
+                        {"name": "api"},
+                    ]
+                },
+                services=[],
+            )
+
+            service = PreviewService()
+            with patch.object(
+                service,
+                "_free_port",
+                side_effect=[41000, 41001, 41002],
+            ):
+                override_path, service_urls = service._write_preview_override(root, analysis)
+
+            override = yaml.safe_load(override_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                override["services"]["frontend"]["ports"],
+                ["41000:3000"],
+            )
+            self.assertEqual(
+                override["services"]["web"]["ports"],
+                ["41001:3000"],
+            )
+            self.assertEqual(
+                override["services"]["api"]["ports"],
+                ["41002:3000"],
+            )
+            self.assertEqual(service_urls, {"web": ["http://127.0.0.1:41001"]})
+
+    def test_filter_accessible_service_urls_requires_http_reachability(self):
+        service = PreviewService()
+        preview_run = SimpleNamespace(id="preview-1234")
+        service_urls = {
+            "web": ["http://127.0.0.1:34229"],
+        }
+
+        with patch.object(
+            service,
+            "_compose_service_states",
+            return_value={
+                "web": {"state": "running", "health": "healthy", "status": "Up (healthy)"},
+            },
+        ), patch.object(
+            service,
+            "_url_is_http_ready",
+            return_value=False,
+        ):
+            filtered = service._filter_accessible_service_urls(
+                Path("C:/tmp"),
+                preview_run,
+                "autodocker.preview.compose.yml",
+                service_urls,
+                {"web"},
+            )
+
+        self.assertEqual(filtered, {})
+
+    def test_start_single_container_preview_marks_preview_failed_when_http_never_becomes_ready(self):
+        service = PreviewService()
+        preview_run = SimpleNamespace(
+            id="preview-1234",
+            status="running",
+            runtime_kind="",
+            command="",
+            logs="",
+            ports={},
+            access_url="",
+            resource_names=[],
+            expires_at=None,
+            finished_at=None,
+            metadata={},
+            save=Mock(),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "core.services.preview.docker_command",
+            return_value=["docker"],
+        ), patch(
+            "core.services.preview.run_command",
+            side_effect=[
+                SimpleNamespace(output="build ok"),
+                SimpleNamespace(output=""),
+                SimpleNamespace(output="container started"),
+                SimpleNamespace(output="3000/tcp -> 127.0.0.1:34229"),
+                SimpleNamespace(output="container logs"),
+            ],
+        ), patch.object(
+            service,
+            "_url_is_http_ready",
+            return_value=False,
+        ):
+            service._start_single_container_preview(preview_run, Path(temp_dir))
+
+        self.assertEqual(preview_run.status, PreviewRun.Status.FAILED)
+        self.assertEqual(preview_run.access_url, "")
+        self.assertEqual(preview_run.resource_names, ["adprv_preview123"])
+        self.assertIn("container logs", preview_run.logs)
+
     def test_preview_override_remaps_shared_service_ports_without_exposing_them(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1118,7 +1417,7 @@ class PreviewServiceTests(SimpleTestCase):
                 ["41003:6379"],
             )
             self.assertEqual(service_urls["web"], ["http://127.0.0.1:41000"])
-            self.assertEqual(service_urls["api"], ["http://127.0.0.1:41001"])
+            self.assertNotIn("api", service_urls)
             self.assertNotIn("postgres", service_urls)
             self.assertNotIn("redis", service_urls)
 
@@ -1139,6 +1438,10 @@ class PreviewServiceTests(SimpleTestCase):
                 "api": {"state": "running", "health": "unhealthy", "status": "Up (unhealthy)"},
                 "app": {"state": "exited", "health": "", "status": "Exited (1)"},
             },
+        ), patch.object(
+            service,
+            "_url_is_http_ready",
+            return_value=True,
         ):
             filtered = service._filter_accessible_service_urls(
                 Path("C:/tmp"),
@@ -1198,5 +1501,135 @@ class PreviewServiceTests(SimpleTestCase):
         self.assertIn("- api: Up (unhealthy)", notes)
         self.assertIn("- app: Exited (1)", notes)
         self.assertNotIn("postgres", notes)
+
+
+@override_settings(
+    AUTODOCKER_PREVIEW_TTL_SECONDS=1800,
+    AUTODOCKER_PREVIEW_RUNNER_MAX_ACTIVE_SESSIONS=2,
+)
+class PreviewRunnerSessionServiceTests(TestCase):
+    preview_id = "11111111-1111-4111-8111-111111111111"
+    analysis_id = "22222222-2222-4222-8222-222222222222"
+
+    def test_start_returns_failed_session_when_keep_workspaces_is_enabled(self):
+        session = PreviewRunnerSession.objects.create(
+            preview_id=self.preview_id,
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            metadata={},
+            status=PreviewRunnerSession.Status.QUEUED,
+        )
+
+        with override_settings(AUTODOCKER_PREVIEW_KEEP_WORKSPACES=True), patch.object(
+            PreviewRunnerSessionService,
+            "_download_bundle",
+            side_effect=PreviewRunnerSessionError("bundle failed"),
+        ), patch.object(
+            PreviewRunnerSessionService,
+            "_cleanup_workspace",
+        ) as mock_cleanup:
+            result = PreviewRunnerSessionService().start(session)
+
+        self.assertEqual(result.pk, session.pk)
+        session.refresh_from_db()
+        self.assertEqual(session.status, PreviewRunnerSession.Status.FAILED)
+        self.assertEqual(session.metadata["failure_reason"], "bundle failed")
+        mock_cleanup.assert_not_called()
+
+    def test_rejects_new_session_when_global_active_limit_is_reached(self):
+        for suffix in ("aaaa", "bbbb"):
+            PreviewRunnerSession.objects.create(
+                preview_id=f"33333333-3333-4333-8333-{suffix}11111111",
+                analysis_id=self.analysis_id,
+                project_name="demo-app",
+                bundle_url="https://storage.example/bundles/preview.zip",
+                bundle_sha256="a" * 64,
+                requested_ttl_seconds=1800,
+                metadata={},
+                status=PreviewRunnerSession.Status.READY,
+            )
+
+        session = PreviewRunnerSession.objects.create(
+            preview_id="44444444-4444-4444-8444-444444444444",
+            analysis_id=self.analysis_id,
+            project_name="overflow",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="b" * 64,
+            requested_ttl_seconds=1800,
+            metadata={},
+            status=PreviewRunnerSession.Status.QUEUED,
+        )
+
+        with self.assertRaisesMessage(PreviewRunnerSessionError, "límite de previews activas"):
+            PreviewRunnerSessionService().start(session)
+
+    def test_ttl_seconds_is_clamped_to_aggressive_runner_limit(self):
+        session = PreviewRunnerSession(
+            preview_id="55555555-5555-4555-8555-555555555555",
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=9999,
+        )
+
+        ttl_seconds = PreviewRunnerSessionService()._ttl_seconds(session)
+
+        self.assertEqual(ttl_seconds, 1800)
+
+    def test_reconcile_expires_ready_sessions_past_due(self):
+        session = PreviewRunnerSession.objects.create(
+            preview_id="66666666-6666-4666-8666-666666666666",
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            metadata={},
+            status=PreviewRunnerSession.Status.READY,
+            expires_at=timezone.now() - timedelta(minutes=5),
+        )
+
+        with patch.object(
+            PreviewRunnerSessionService,
+            "stop",
+            wraps=PreviewRunnerSessionService().stop,
+        ) as mock_stop, patch(
+            "core.services.preview_runner_sessions.PreviewService.stop",
+            side_effect=lambda target: target,
+        ):
+            reconciled = PreviewRunnerSessionService().reconcile()
+
+        session.refresh_from_db()
+        self.assertEqual(reconciled, 1)
+        self.assertEqual(session.status, PreviewRunnerSession.Status.EXPIRED)
+        mock_stop.assert_called_once()
+
+    def test_management_command_reconciles_expired_runner_sessions(self):
+        session = PreviewRunnerSession.objects.create(
+            preview_id="77777777-7777-4777-8777-777777777777",
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            metadata={},
+            status=PreviewRunnerSession.Status.READY,
+            expires_at=timezone.now() - timedelta(minutes=5),
+        )
+        output = io.StringIO()
+
+        with patch(
+            "core.services.preview_runner_sessions.PreviewService.stop",
+            side_effect=lambda target: target,
+        ):
+            call_command("reconcile_preview_runner_sessions", stdout=output)
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, PreviewRunnerSession.Status.EXPIRED)
+        self.assertIn("Reconciled 1 preview runner session", output.getvalue())
 
 

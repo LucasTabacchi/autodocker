@@ -103,6 +103,25 @@ Ejemplo de cómo quedarían:
 - repo executor privado en GitHub Actions
 - host dedicado con Docker si querés previews remotas públicas
 
+### Runner remoto de previews recomendado
+
+Para previews remotas de producción, la topología soportada y recomendada es:
+
+- app principal separada del host que ejecuta previews
+- `preview-runner` en una VM dedicada
+- Docker + Docker Compose plugin en ese host
+- Caddy publicando `https://prv-<id>.<dominio>`
+- URLs efímeras con TTL corto y cleanup automático
+
+Configuración inicial recomendada para Oracle Cloud Free Tier:
+
+- shape `VM.Standard.A1.Flex`
+- `2 OCPUs`
+- `12 GB RAM`
+- Ubuntu `24.04 LTS`
+- `2 previews` simultáneas máximas
+- `1` único servicio HTTP público por preview
+
 ## Instalación
 
 ### Opción 1: desarrollo local con Python
@@ -239,6 +258,75 @@ console.log(job.id, job.status);
 - `GET /api/analyses/{id}/download/`
 - `PATCH /api/artifacts/{id}/`
 - `GET /api/jobs/{id}/`
+
+## Configuración de previews remotas
+
+### Variables del runner
+
+Estas variables aplican al host donde corre `preview-runner`:
+
+```env
+AUTODOCKER_DEPLOYMENT_ROLE=preview_runner
+AUTODOCKER_PREVIEW_KEEP_WORKSPACES=false
+AUTODOCKER_PREVIEW_TTL_SECONDS=1800
+AUTODOCKER_PREVIEW_MAX_TTL_SECONDS=2700
+AUTODOCKER_PREVIEW_URL_STRATEGY=runner_managed
+AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN=previews.example.com
+AUTODOCKER_PREVIEW_RUNNER_REQUEST_TIMEOUT=60
+AUTODOCKER_PREVIEW_RUNNER_MAX_ACTIVE_SESSIONS=2
+AUTODOCKER_PREVIEW_MAX_BUNDLE_MB=100
+AUTODOCKER_PREVIEW_PER_SESSION_CPU=0.75
+AUTODOCKER_PREVIEW_PER_SESSION_MEMORY_MB=2560
+AUTODOCKER_PREVIEW_HTTP_READY_TIMEOUT_SECONDS=75
+AUTODOCKER_PREVIEW_RUNNER_TOKEN=replace-with-runner-shared-token
+```
+
+Notas operativas:
+
+- el runner expone un solo servicio HTTP público por preview
+- el runner prioriza servicios `web`, `app`, `frontend` y `site`
+- con `AUTODOCKER_PREVIEW_CADDY_ENABLED=true` publica y remueve subdominios reales a través de Caddy
+- las previews vencidas se pueden reconciliar con:
+
+```bash
+python manage.py reconcile_preview_runner_sessions
+```
+
+- en producción conviene ejecutar ese comando desde `cron` o `systemd timer`
+
+### Variables de la app principal
+
+Estas variables aplican a la app web que pide previews al runner:
+
+```env
+AUTODOCKER_PREVIEW_BACKEND=remote_runner
+AUTODOCKER_PREVIEW_RUNNER_BASE_URL=http://preview-runner.internal:9000
+AUTODOCKER_PREVIEW_RUNNER_TOKEN=replace-with-runner-shared-token
+AUTODOCKER_ENABLE_RUNTIME_JOBS=false
+AUTODOCKER_PREVIEW_URL_STRATEGY=runner_managed
+AUTODOCKER_PREVIEW_PUBLIC_BASE_DOMAIN=previews.example.com
+```
+
+### Seguridad mínima del runner
+
+- no expongas el puerto del runner públicamente
+- abrí solo `22`, `80` y `443` en la VM
+- mantené el runner escuchando en `127.0.0.1:9000` o detrás de red privada
+- usá un bearer token largo y rotado
+
+### Deploy Oracle listo para usar
+
+Hay artefactos de despliegue listos en:
+
+- `deploy/oracle/preview-runner/Caddyfile`
+- `deploy/oracle/preview-runner/preview-runner.env.example`
+- `deploy/oracle/preview-runner/systemd/preview-runner.service`
+- `deploy/oracle/preview-runner/systemd/reconcile-preview-runner-sessions.service`
+- `deploy/oracle/preview-runner/systemd/reconcile-preview-runner-sessions.timer`
+
+Guía operativa paso a paso:
+
+- `docs/oracle-preview-runner.md`
 
 ## Estructura del proyecto
 

@@ -38,6 +38,7 @@ from core.services.github_pr import GitHubPullRequestResult
 from core.services.healthchecks import HealthcheckPlannerService
 from core.services.contracts import GeneratedArtifactSpec
 from core.services.ingestion import cleanup_workspace, prepare_source_workspace
+from core.services.local_preview_smoke import LocalPreviewSmokeService
 from core.services.validation_bundle import ValidationBundleService
 from core.services.execution_runner import ExecutionJobRunner
 from core.services.preview import PreviewService
@@ -175,6 +176,48 @@ class DashboardAuthTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "core/js/dashboard_form.js")
         self.assertContains(response, "core/js/dashboard_collections.js")
+
+    @override_settings(
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="",
+    )
+    def test_dashboard_hides_preview_controls_when_remote_runner_is_not_configured(self):
+        user = get_user_model().objects.create_user(
+            username="dashboard-no-preview",
+            password="super-secret-pass-123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'id="preview-button"')
+        self.assertNotContains(response, 'id="stop-preview-button"')
+        self.assertNotContains(response, 'id="preview-summary"')
+        self.assertNotContains(response, "preview ejecutable")
+        self.assertNotContains(response, "Preview → PR")
+
+    @override_settings(
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    def test_dashboard_keeps_preview_controls_when_remote_runner_is_configured(self):
+        user = get_user_model().objects.create_user(
+            username="dashboard-with-preview",
+            password="super-secret-pass-123",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="preview-button"')
+        self.assertContains(response, 'id="stop-preview-button"')
+        self.assertContains(response, 'id="preview-summary"')
+        self.assertContains(response, "preview ejecutable")
+        self.assertContains(response, "Preview → PR")
 
 
 @override_settings(AUTODOCKER_ASYNC_MODE="inline", CELERY_TASK_ALWAYS_EAGER=False)
@@ -1471,6 +1514,40 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(payload["logs"], "remote preview stopped")
         mock_stop.assert_called_once()
 
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    @patch("core.services.preview.RemotePreviewService.start")
+    def test_preview_endpoint_accepts_smoke_fixture_analysis_for_remote_runner(self, mock_start):
+        analysis = LocalPreviewSmokeService().prepare_analysis(
+            owner=self.user,
+            repository_url="https://github.com/acme/demo-app",
+        )
+
+        def fake_start(preview_run):
+            preview_run.status = PreviewRun.Status.RUNNING
+            preview_run.runtime_kind = PreviewRun.RuntimeKind.CONTAINER
+            preview_run.logs = "runner accepted smoke fixture"
+            preview_run.resource_names = ["adprv_smoke"]
+            preview_run.save(
+                update_fields=["status", "runtime_kind", "logs", "resource_names", "updated_at"]
+            )
+            return preview_run
+
+        mock_start.side_effect = fake_start
+
+        response = self.client.post(reverse("core-api:analysis-preview", args=[analysis.id]))
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.RUNNING)
+        self.assertEqual(payload["logs"], "runner accepted smoke fixture")
+        self.assertEqual(payload["resource_names"], ["adprv_smoke"])
+        mock_start.assert_called_once()
+
     def test_workspace_viewer_cannot_start_preview(self):
         viewer, _workspace, analysis, _artifact = self._build_workspace_analysis_for_viewer(
             username="viewer-preview-start"
@@ -1595,6 +1672,51 @@ class PreviewRunnerApiTests(TestCase):
         self.assertEqual(session.project_name, "demo-app")
         self.assertEqual(session.metadata["generation_profile"], "production")
         mock_schedule.assert_called_once()
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+        AUTODOCKER_PREVIEW_RUNNER_MAX_ACTIVE_SESSIONS=2,
+        AUTODOCKER_ASYNC_MODE="inline",
+    )
+    def test_runner_create_preview_rejects_when_active_capacity_is_exhausted(self):
+        PreviewRunnerSession.objects.create(
+            preview_id="33333333-3333-4333-8333-333333333333",
+            analysis_id=self.analysis_id,
+            project_name="demo-a",
+            bundle_url="https://storage.example/bundles/a.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            status=PreviewRunnerSession.Status.READY,
+        )
+        PreviewRunnerSession.objects.create(
+            preview_id="44444444-4444-4444-8444-444444444444",
+            analysis_id=self.analysis_id,
+            project_name="demo-b",
+            bundle_url="https://storage.example/bundles/b.zip",
+            bundle_sha256="b" * 64,
+            requested_ttl_seconds=1800,
+            status=PreviewRunnerSession.Status.STARTING,
+        )
+
+        response = self.client.post(
+            "/previews",
+            data=json.dumps(
+                {
+                    "preview_id": self.preview_id,
+                    "analysis_id": self.analysis_id,
+                    "project_name": "demo-app",
+                    "bundle_url": "https://storage.example/bundles/preview.zip",
+                    "bundle_sha256": "c" * 64,
+                    "requested_ttl_seconds": 1800,
+                }
+            ),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer preview-token",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("límite de previews activas", response.json()["detail"])
 
     @override_settings(
         ROOT_URLCONF="config.runner_urls",

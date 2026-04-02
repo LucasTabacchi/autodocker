@@ -1,0 +1,11 @@
+[Unit]
+Description=Run preview runner reconciliation every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=reconcile-preview-runner-sessions.service
+
+[Install]
+WantedBy=timers.target

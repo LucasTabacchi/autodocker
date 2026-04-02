@@ -76,6 +76,13 @@
         deploySummary: byId("deploy-summary"),
         deployTargets: byId("deploy-targets"),
     };
+    const previewUiAvailable = Boolean(
+        elements.preview &&
+        elements.stopPreview &&
+        elements.previewSummary &&
+        elements.previewLinks &&
+        elements.previewLogs,
+    );
 
     const state = {
         analysis: null,
@@ -176,8 +183,8 @@
         elements.regenerate.addEventListener("click", regenerateAnalysis);
         elements.validate.addEventListener("click", validateBuild);
         elements.diff.addEventListener("click", loadDiff);
-        elements.preview.addEventListener("click", startPreview);
-        elements.stopPreview.addEventListener("click", stopPreview);
+        elements.preview?.addEventListener("click", startPreview);
+        elements.stopPreview?.addEventListener("click", stopPreview);
         elements.githubForm.addEventListener("submit", createPullRequest);
         elements.workspaceSelect?.addEventListener("change", onWorkspaceChange);
         elements.workspaceForm?.addEventListener("submit", createWorkspace);
@@ -370,6 +377,9 @@
             return;
         }
 
+        if (!previewUiAvailable) {
+            return;
+        }
         elements.previewSummary.textContent = "Preparando preview…";
         try {
             const preview = await requestJson(`/api/analyses/${state.analysis.id}/preview/`, {
@@ -385,7 +395,7 @@
     }
 
     async function stopPreview() {
-        if (!state.analysis || !state.analysis.active_preview) {
+        if (!previewUiAvailable || !state.analysis || !state.analysis.active_preview) {
             return;
         }
 
@@ -628,13 +638,19 @@
         elements.regenerate.disabled = !state.analysis;
         elements.validate.disabled = !isReady || !validationCapability?.enabled;
         elements.diff.disabled = !isReady;
-        elements.preview.disabled = !isReady || !previewCapability?.enabled;
+        if (previewUiAvailable) {
+            elements.preview.disabled = !isReady || !previewCapability?.enabled;
+        }
         elements.githubButton.disabled = !isReady;
-        elements.stopPreview.disabled = !(analysis.active_preview && analysis.active_preview.is_active);
+        if (previewUiAvailable) {
+            elements.stopPreview.disabled = !(analysis.active_preview && analysis.active_preview.is_active);
+        }
         elements.download.href = isReady ? analysis.download_url : "#";
         elements.download.classList.toggle("is-disabled", !isReady);
         elements.validate.title = capabilityTitle(validationCapability, "Validar build");
-        elements.preview.title = capabilityTitle(previewCapability, "Preview");
+        if (previewUiAvailable) {
+            elements.preview.title = capabilityTitle(previewCapability, "Preview");
+        }
 
         renderSummaryCards(analysis, components);
         renderRecommendations(analysis.recommendations || []);
@@ -662,11 +678,13 @@
         renderJob("validation", analysis.latest_validation_job);
         renderJob("github", analysis.latest_github_pr_job);
         renderProfile(analysis);
-        renderPreview(analysis.active_preview);
+        if (previewUiAvailable) {
+            renderPreview(analysis.active_preview);
+        }
         if (isReady && !analysis.latest_validation_job && validationCapability && !validationCapability.enabled) {
             elements.validationSummary.textContent = validationCapability.reason;
         }
-        if (isReady && !analysis.active_preview && previewCapability && !previewCapability.enabled) {
+        if (previewUiAvailable && isReady && !analysis.active_preview && previewCapability && !previewCapability.enabled) {
             elements.previewSummary.textContent = previewCapability.reason;
         }
         renderSecurityReport(analysis.security_report);
@@ -703,17 +721,25 @@
         elements.regenerate.disabled = true;
         elements.validate.disabled = true;
         elements.diff.disabled = true;
-        elements.preview.disabled = true;
+        if (previewUiAvailable) {
+            elements.preview.disabled = true;
+        }
         elements.githubButton.disabled = true;
-        elements.stopPreview.disabled = true;
+        if (previewUiAvailable) {
+            elements.stopPreview.disabled = true;
+        }
         elements.download.href = "#";
         elements.download.classList.add("is-disabled");
         elements.validate.title = "Validar build";
-        elements.preview.title = "Preview";
+        if (previewUiAvailable) {
+            elements.preview.title = "Preview";
+        }
         renderJob("validation", null);
         renderJob("github", null);
         renderProfile(null);
-        renderPreview(null);
+        if (previewUiAvailable) {
+            renderPreview(null);
+        }
         renderDiff([]);
         renderSecurityReport(null);
         renderHealthchecks(null);
@@ -1009,6 +1035,9 @@
     }
 
     function renderPreview(preview) {
+        if (!previewUiAvailable) {
+            return;
+        }
         if (!preview) {
             elements.previewSummary.textContent = "No hay preview activa.";
             elements.previewLinks.innerHTML = "";

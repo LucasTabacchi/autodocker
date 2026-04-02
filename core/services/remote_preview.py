@@ -5,6 +5,7 @@ from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from urllib.parse import urljoin, urlparse
 
 from core.models import PreviewRun
 from core.services.ingestion import cleanup_workspace
@@ -42,7 +43,7 @@ class RemotePreviewService:
             bundle_key = self._bundle_storage_key(preview_run)
             with bundle.bundle_path.open("rb") as bundle_stream:
                 saved_key = default_storage.save(bundle_key, File(bundle_stream, name=bundle.bundle_path.name))
-            bundle_url = default_storage.url(saved_key)
+            bundle_url = self._absolute_bundle_url(default_storage.url(saved_key))
             payload = PreviewRunnerClient().create_preview(
                 preview_id=str(preview_run.id),
                 analysis_id=str(preview_run.analysis_id),
@@ -135,3 +136,9 @@ class RemotePreviewService:
 
     def _bundle_storage_key(self, preview_run: PreviewRun) -> str:
         return f"preview-bundles/{str(preview_run.id)}/bundle.zip"
+
+    def _absolute_bundle_url(self, bundle_url: str) -> str:
+        parsed = urlparse(bundle_url)
+        if parsed.scheme and parsed.netloc:
+            return bundle_url
+        return urljoin(f"{settings.AUTODOCKER_APP_BASE_URL.rstrip('/')}/", bundle_url.lstrip("/"))
