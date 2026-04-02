@@ -41,7 +41,20 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context["workspaces"] = workspaces
         context["active_workspace"] = active_workspace
         context["preview_runtime_capability"] = preview_runtime_capability()
-        analyses = ProjectAnalysis.objects.with_related().for_user(self.request.user)
+        analyses = (
+            ProjectAnalysis.objects.for_user(self.request.user)
+            .select_related("workspace")
+            .only(
+                "id",
+                "workspace_id",
+                "workspace__name",
+                "workspace__slug",
+                "project_name",
+                "status",
+                "detected_framework",
+                "created_at",
+            )
+        )
         if active_workspace:
             analyses = analyses.filter(workspace=active_workspace)
         recent_analyses = analyses[:8]

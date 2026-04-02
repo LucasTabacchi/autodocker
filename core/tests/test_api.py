@@ -277,6 +277,61 @@ class DashboardAuthTests(TestCase):
         self.assertContains(response, str(analysis.id))
         self.assertNotContains(response, "HEAVY-DASHBOARD-BOOTSTRAP-MARKER")
 
+    def test_dashboard_initial_render_does_not_query_heavy_analysis_relations(self):
+        user = get_user_model().objects.create_user(
+            username="dashboard-lightweight",
+            password="super-secret-pass-123",
+        )
+        workspace = Workspace.objects.create(
+            owner=user,
+            name="Equipo liviano",
+            slug="equipo-liviano",
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=user,
+            role=WorkspaceMembership.Role.OWNER,
+        )
+        analysis = ProjectAnalysis.objects.create(
+            owner=user,
+            workspace=workspace,
+            project_name="lightweight-app",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            generation_profile=ProjectAnalysis.GenerationProfile.PRODUCTION,
+            repository_url="https://github.com/acme/lightweight-app",
+            status=ProjectAnalysis.Status.READY,
+        )
+        GeneratedArtifact.objects.create(
+            analysis=analysis,
+            kind=GeneratedArtifact.Kind.DOCKERFILE,
+            path="Dockerfile",
+            content="FROM python:3.13-slim",
+        )
+        ExecutionJob.objects.create(
+            owner=user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.VALIDATION,
+            status=ExecutionJob.Status.READY,
+            label="validation",
+        )
+        PreviewRun.objects.create(
+            owner=user,
+            analysis=analysis,
+            status=PreviewRun.Status.READY,
+            runtime_kind=PreviewRun.RuntimeKind.CONTAINER,
+            access_url="https://preview.example.com",
+        )
+        self.client.force_login(user)
+
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        sql = "\n".join(query["sql"].lower() for query in queries.captured_queries)
+        self.assertNotIn("core_generatedartifact", sql)
+        self.assertNotIn("core_executionjob", sql)
+        self.assertNotIn("core_previewrun", sql)
+
 
 class DashboardSerializationPerformanceTests(TestCase):
     def setUp(self):
