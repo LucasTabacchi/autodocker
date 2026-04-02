@@ -87,12 +87,26 @@ class ExternalRepoConnectionSerializer(serializers.ModelSerializer):
         return bool(obj.access_token)
 
 
+class DashboardConnectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExternalRepoConnection
+        fields = ("id", "provider", "label", "account_name")
+
+
 class WorkspaceMembershipSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
 
     class Meta:
         model = WorkspaceMembership
         fields = ("id", "username", "role", "created_at", "updated_at")
+
+
+class DashboardWorkspaceMembershipSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = WorkspaceMembership
+        fields = ("id", "username", "role")
 
 
 class WorkspaceInvitationSerializer(serializers.ModelSerializer):
@@ -118,6 +132,39 @@ class WorkspaceInvitationSerializer(serializers.ModelSerializer):
             "responded_at",
             "created_at",
             "updated_at",
+        )
+
+    def get_invited_username(self, obj: WorkspaceInvitation) -> str:
+        if obj.invited_user_id:
+            return obj.invited_user.username
+        return ""
+
+    def get_workspace(self, obj: WorkspaceInvitation):
+        return {
+            "id": str(obj.workspace_id),
+            "name": obj.workspace.name,
+            "slug": obj.workspace.slug,
+        }
+
+
+class DashboardWorkspaceInvitationSerializer(serializers.ModelSerializer):
+    invited_by_username = serializers.CharField(source="invited_by.username", read_only=True)
+    invited_username = serializers.SerializerMethodField()
+    target_label = serializers.CharField(read_only=True)
+    workspace = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkspaceInvitation
+        fields = (
+            "id",
+            "workspace",
+            "invited_by_username",
+            "invited_username",
+            "email",
+            "target_label",
+            "role",
+            "status",
+            "delivery_status",
         )
 
     def get_invited_username(self, obj: WorkspaceInvitation) -> str:
@@ -177,6 +224,44 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def _prefetched_relation(self, obj, relation_name: str):
         return getattr(obj, "_prefetched_objects_cache", {}).get(relation_name)
+
+
+class DashboardWorkspaceSerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+    memberships = DashboardWorkspaceMembershipSerializer(many=True, read_only=True)
+    pending_invitations = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Workspace
+        fields = (
+            "id",
+            "name",
+            "member_count",
+            "memberships",
+            "pending_invitations",
+        )
+
+    def get_member_count(self, obj: Workspace) -> int:
+        memberships = getattr(obj, "_prefetched_objects_cache", {}).get("memberships")
+        if memberships is not None:
+            return len(memberships)
+        return obj.memberships.count()
+
+    def get_pending_invitations(self, obj: Workspace):
+        invitations = getattr(obj, "_prefetched_objects_cache", {}).get("invitations")
+        if invitations is not None:
+            invitations = [
+                invitation
+                for invitation in invitations
+                if invitation.status == WorkspaceInvitation.Status.PENDING
+            ]
+        else:
+            invitations = (
+                obj.invitations.filter(status=WorkspaceInvitation.Status.PENDING)
+                .select_related("workspace", "invited_by", "invited_user")
+                .order_by("-created_at")
+            )
+        return DashboardWorkspaceInvitationSerializer(invitations, many=True).data
 
 
 class ProjectAnalysisSerializer(serializers.ModelSerializer):
@@ -308,3 +393,26 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             if preview.status in active_statuses:
                 return preview
         return None
+
+
+class DashboardHistoryAnalysisSerializer(serializers.ModelSerializer):
+    workspace = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProjectAnalysis
+        fields = (
+            "id",
+            "workspace",
+            "project_name",
+            "status",
+            "detected_framework",
+        )
+
+    def get_workspace(self, obj: ProjectAnalysis):
+        if not obj.workspace_id:
+            return None
+        return {
+            "id": str(obj.workspace_id),
+            "name": obj.workspace.name,
+            "slug": obj.workspace.slug,
+        }

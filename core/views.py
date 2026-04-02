@@ -11,10 +11,10 @@ from django.views import View
 from django.views.generic import FormView, TemplateView
 
 from core.api.serializers import (
-    ExternalRepoConnectionSerializer,
-    ProjectAnalysisSerializer,
-    WorkspaceInvitationSerializer,
-    WorkspaceSerializer,
+    DashboardConnectionSerializer,
+    DashboardHistoryAnalysisSerializer,
+    DashboardWorkspaceInvitationSerializer,
+    DashboardWorkspaceSerializer,
 )
 from core.forms import AnalysisSubmissionForm, SignUpForm
 from core.models import ExternalRepoConnection, ProjectAnalysis, Workspace
@@ -47,20 +47,19 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         recent_analyses = analyses[:8]
         context["recent_analyses"] = recent_analyses
         context["dashboard_bootstrap"] = {
-            "workspaces": WorkspaceSerializer(
+            "workspaces": DashboardWorkspaceSerializer(
                 workspaces,
                 many=True,
             ).data,
-            "incoming_invitations": WorkspaceInvitationSerializer(
+            "incoming_invitations": DashboardWorkspaceInvitationSerializer(
                 incoming_workspace_invitations_for_user(self.request.user),
                 many=True,
             ).data,
-            "recent_analyses": ProjectAnalysisSerializer(
+            "recent_analyses": DashboardHistoryAnalysisSerializer(
                 recent_analyses,
                 many=True,
-                context={"request": self.request},
             ).data,
-            "connections": ExternalRepoConnectionSerializer(
+            "connections": DashboardConnectionSerializer(
                 ExternalRepoConnection.objects.for_user(self.request.user),
                 many=True,
             ).data,

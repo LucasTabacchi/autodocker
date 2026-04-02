@@ -247,6 +247,12 @@ class DashboardAuthTests(TestCase):
             repository_url="https://github.com/acme/bootstrap-app",
             status=ProjectAnalysis.Status.READY,
         )
+        GeneratedArtifact.objects.create(
+            analysis=analysis,
+            kind=GeneratedArtifact.Kind.DOCKERFILE,
+            path="Dockerfile",
+            content="HEAVY-DASHBOARD-BOOTSTRAP-MARKER",
+        )
         ExternalRepoConnection.objects.create(
             owner=user,
             provider=ExternalRepoConnection.Provider.GITHUB,
@@ -269,6 +275,7 @@ class DashboardAuthTests(TestCase):
         self.assertContains(response, "Equipo plataforma")
         self.assertContains(response, "GitHub personal")
         self.assertContains(response, str(analysis.id))
+        self.assertNotContains(response, "HEAVY-DASHBOARD-BOOTSTRAP-MARKER")
 
 
 class DashboardSerializationPerformanceTests(TestCase):

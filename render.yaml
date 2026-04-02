@@ -18,6 +18,8 @@ services:
         generateValue: true
       - key: PYTHON_VERSION
         value: 3.13.2
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: DJANGO_DEBUG
         value: "false"
       - key: AUTODOCKER_DEPLOYMENT_ROLE
