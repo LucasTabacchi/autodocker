@@ -154,15 +154,29 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         )
 
     def get_member_count(self, obj: Workspace) -> int:
+        memberships = self._prefetched_relation(obj, "memberships")
+        if memberships is not None:
+            return len(memberships)
         return obj.memberships.count()
 
     def get_pending_invitations(self, obj: Workspace):
-        invitations = (
-            obj.invitations.filter(status=WorkspaceInvitation.Status.PENDING)
-            .select_related("workspace", "invited_by", "invited_user")
-            .order_by("-created_at")
-        )
+        invitations = self._prefetched_relation(obj, "invitations")
+        if invitations is not None:
+            invitations = [
+                invitation
+                for invitation in invitations
+                if invitation.status == WorkspaceInvitation.Status.PENDING
+            ]
+        else:
+            invitations = (
+                obj.invitations.filter(status=WorkspaceInvitation.Status.PENDING)
+                .select_related("workspace", "invited_by", "invited_user")
+                .order_by("-created_at")
+            )
         return WorkspaceInvitationSerializer(invitations, many=True).data
+
+    def _prefetched_relation(self, obj, relation_name: str):
+        return getattr(obj, "_prefetched_objects_cache", {}).get(relation_name)
 
 
 class ProjectAnalysisSerializer(serializers.ModelSerializer):
@@ -243,21 +257,27 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
         }
 
     def get_latest_validation_job(self, obj: ProjectAnalysis):
-        job = obj.execution_jobs.filter(kind=ExecutionJob.Kind.VALIDATION).order_by("-created_at").first()
+        job = self._latest_prefetched_execution_job(obj, ExecutionJob.Kind.VALIDATION)
+        if job is None:
+            job = obj.execution_jobs.filter(kind=ExecutionJob.Kind.VALIDATION).order_by("-created_at").first()
         return ExecutionJobSerializer(job).data if job else None
 
     def get_latest_github_pr_job(self, obj: ProjectAnalysis):
-        job = obj.execution_jobs.filter(kind=ExecutionJob.Kind.GITHUB_PR).order_by("-created_at").first()
+        job = self._latest_prefetched_execution_job(obj, ExecutionJob.Kind.GITHUB_PR)
+        if job is None:
+            job = obj.execution_jobs.filter(kind=ExecutionJob.Kind.GITHUB_PR).order_by("-created_at").first()
         return ExecutionJobSerializer(job).data if job else None
 
     def get_active_preview(self, obj: ProjectAnalysis):
-        preview = obj.preview_runs.filter(
-            status__in=(
-                PreviewRun.Status.QUEUED,
-                PreviewRun.Status.RUNNING,
-                PreviewRun.Status.READY,
-            )
-        ).order_by("-created_at").first()
+        preview = self._active_prefetched_preview(obj)
+        if preview is None:
+            preview = obj.preview_runs.filter(
+                status__in=(
+                    PreviewRun.Status.QUEUED,
+                    PreviewRun.Status.RUNNING,
+                    PreviewRun.Status.READY,
+                )
+            ).order_by("-created_at").first()
         return PreviewRunSerializer(preview).data if preview else None
 
     def get_runtime_capabilities(self, obj: ProjectAnalysis):
@@ -265,3 +285,26 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             "validation": validation_runtime_capability(),
             "preview": preview_runtime_capability(),
         }
+
+    def _latest_prefetched_execution_job(self, obj: ProjectAnalysis, kind: str):
+        execution_jobs = getattr(obj, "_prefetched_objects_cache", {}).get("execution_jobs")
+        if execution_jobs is None:
+            return None
+        for job in execution_jobs:
+            if job.kind == kind:
+                return job
+        return None
+
+    def _active_prefetched_preview(self, obj: ProjectAnalysis):
+        previews = getattr(obj, "_prefetched_objects_cache", {}).get("preview_runs")
+        if previews is None:
+            return None
+        active_statuses = {
+            PreviewRun.Status.QUEUED,
+            PreviewRun.Status.RUNNING,
+            PreviewRun.Status.READY,
+        }
+        for preview in previews:
+            if preview.status in active_statuses:
+                return preview
+        return None

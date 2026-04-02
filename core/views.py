@@ -10,10 +10,20 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import FormView, TemplateView
 
+from core.api.serializers import (
+    ExternalRepoConnectionSerializer,
+    ProjectAnalysisSerializer,
+    WorkspaceInvitationSerializer,
+    WorkspaceSerializer,
+)
 from core.forms import AnalysisSubmissionForm, SignUpForm
-from core.models import ProjectAnalysis, Workspace
+from core.models import ExternalRepoConnection, ProjectAnalysis, Workspace
 from core.services.runtime import preview_runtime_capability
-from core.services.workspaces import default_workspace_for_user, ensure_personal_workspace
+from core.services.workspaces import (
+    default_workspace_for_user,
+    ensure_personal_workspace,
+    incoming_workspace_invitations_for_user,
+)
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -22,14 +32,39 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         active_workspace = default_workspace_for_user(self.request.user)
+        workspaces = Workspace.objects.for_user(self.request.user).prefetch_related(
+            "memberships__user",
+            "invitations__invited_user",
+            "invitations__invited_by",
+        )
         context["submission_form"] = AnalysisSubmissionForm()
-        context["workspaces"] = Workspace.objects.for_user(self.request.user).prefetch_related("memberships__user")
+        context["workspaces"] = workspaces
         context["active_workspace"] = active_workspace
         context["preview_runtime_capability"] = preview_runtime_capability()
         analyses = ProjectAnalysis.objects.with_related().for_user(self.request.user)
         if active_workspace:
             analyses = analyses.filter(workspace=active_workspace)
-        context["recent_analyses"] = analyses[:8]
+        recent_analyses = analyses[:8]
+        context["recent_analyses"] = recent_analyses
+        context["dashboard_bootstrap"] = {
+            "workspaces": WorkspaceSerializer(
+                workspaces,
+                many=True,
+            ).data,
+            "incoming_invitations": WorkspaceInvitationSerializer(
+                incoming_workspace_invitations_for_user(self.request.user),
+                many=True,
+            ).data,
+            "recent_analyses": ProjectAnalysisSerializer(
+                recent_analyses,
+                many=True,
+                context={"request": self.request},
+            ).data,
+            "connections": ExternalRepoConnectionSerializer(
+                ExternalRepoConnection.objects.for_user(self.request.user),
+                many=True,
+            ).data,
+        }
         return context
 
 

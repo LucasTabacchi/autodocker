@@ -128,6 +128,8 @@
     const profileLabel = helpers.profileLabel || ((profile) => profile || "");
     const deliveryStatusLabel = helpers.deliveryStatusLabel || ((status) => status || "");
     const formHelpers = window.AutoDockerDashboardForm || {};
+    const dashboardBootstrap = getDashboardBootstrap();
+    const initStartedAt = window.performance?.now?.() || Date.now();
     const setStatusBadge = (text, tone = "subtle") =>
         formHelpers.setStatusBadge(elements, text, tone);
     const setSubmitLoading = (isLoading) => formHelpers.setSubmitLoading(elements, isLoading);
@@ -156,7 +158,7 @@
     const onViewportResize = collections.onViewportResize || (() => {});
 
     init().catch((error) => {
-        setStatusBadge("Error inicial", "error");
+        console.error("Dashboard initialization failed", error);
         window.alert(buildErrorMessage(error));
     });
 
@@ -168,8 +170,73 @@
         renderHealthchecks(null);
         renderCicd(null);
         renderDeploy(null);
-        await loadWorkspaces();
-        await Promise.all([loadConnections(), loadIncomingInvitations(), refreshHistory()]);
+        await loadInitialDashboardData();
+    }
+
+    async function loadInitialDashboardData() {
+        if (dashboardBootstrap) {
+            applyDashboardBootstrap(dashboardBootstrap);
+            reportInitDuration("bootstrap");
+            return;
+        }
+
+        const initialLoaders = [
+            {
+                name: "workspaces",
+                load: loadWorkspaces,
+                onError: () => renderWorkspaces([]),
+            },
+            {
+                name: "connections",
+                load: loadConnections,
+            },
+            {
+                name: "incoming invitations",
+                load: loadIncomingInvitations,
+                onError: () => renderIncomingInvitations([]),
+            },
+            {
+                name: "history",
+                load: refreshHistory,
+                onError: () => renderHistory([]),
+            },
+        ];
+
+        const results = await Promise.allSettled(initialLoaders.map((loader) => loader.load()));
+        results.forEach((result, index) => {
+            if (result.status === "rejected") {
+                const loader = initialLoaders[index];
+                console.error(`Dashboard init failed while loading ${loader.name}`, result.reason);
+                loader.onError?.(result.reason);
+            }
+        });
+        reportInitDuration("api");
+    }
+
+    function getDashboardBootstrap() {
+        const node = document.getElementById("dashboard-bootstrap");
+        if (!node?.textContent) {
+            return null;
+        }
+        try {
+            return JSON.parse(node.textContent);
+        } catch (error) {
+            console.error("Invalid dashboard bootstrap payload", error);
+            return null;
+        }
+    }
+
+    function applyDashboardBootstrap(bootstrap) {
+        renderConnections(bootstrap.connections || []);
+        renderWorkspaces(bootstrap.workspaces || []);
+        renderIncomingInvitations(bootstrap.incoming_invitations || []);
+        renderHistory(bootstrap.recent_analyses || []);
+    }
+
+    function reportInitDuration(source) {
+        const finishedAt = window.performance?.now?.() || Date.now();
+        const durationMs = Math.round(finishedAt - initStartedAt);
+        console.info(`AutoDocker dashboard init: ${durationMs}ms via ${source}`);
     }
 
     function bindEvents() {
@@ -451,17 +518,21 @@
     async function loadConnections() {
         try {
             const connections = await requestJson("/api/connections/");
-            const options = [
-                '<option value="">Usar token manual</option>',
-                ...connections.map(
-                    (connection) =>
-                        `<option value="${connection.id}">${escapeHtml(connection.label)} · ${escapeHtml(connection.account_name || connection.provider)}</option>`,
-                ),
-            ];
-            elements.githubSelect.innerHTML = options.join("");
+            renderConnections(connections);
         } catch {
             elements.githubSelect.innerHTML = '<option value="">No se pudieron cargar conexiones</option>';
         }
+    }
+
+    function renderConnections(connections) {
+        const options = [
+            '<option value="">Usar token manual</option>',
+            ...(connections || []).map(
+                (connection) =>
+                    `<option value="${connection.id}">${escapeHtml(connection.label)} · ${escapeHtml(connection.account_name || connection.provider)}</option>`,
+            ),
+        ];
+        elements.githubSelect.innerHTML = options.join("");
     }
 
     async function loadWorkspaces() {

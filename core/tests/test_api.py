@@ -15,8 +15,12 @@ import yaml
 from config import settings as project_settings
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.test import Client, SimpleTestCase, TestCase, override_settings
+from django.test import RequestFactory
 from django.urls import reverse
+from core.api.serializers import ProjectAnalysisSerializer, WorkspaceSerializer
 from core.models import (
     ArtifactSnapshot,
     ExecutionJob,
@@ -218,6 +222,150 @@ class DashboardAuthTests(TestCase):
         self.assertContains(response, 'id="preview-summary"')
         self.assertContains(response, "preview ejecutable")
         self.assertContains(response, "Preview → PR")
+
+    def test_dashboard_bootstraps_initial_collections_in_html(self):
+        user = get_user_model().objects.create_user(
+            username="dashboard-bootstrap",
+            password="super-secret-pass-123",
+        )
+        workspace = Workspace.objects.create(
+            owner=user,
+            name="Equipo plataforma",
+            slug="equipo-plataforma",
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=user,
+            role=WorkspaceMembership.Role.OWNER,
+        )
+        analysis = ProjectAnalysis.objects.create(
+            owner=user,
+            workspace=workspace,
+            project_name="bootstrap-app",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            generation_profile=ProjectAnalysis.GenerationProfile.PRODUCTION,
+            repository_url="https://github.com/acme/bootstrap-app",
+            status=ProjectAnalysis.Status.READY,
+        )
+        ExternalRepoConnection.objects.create(
+            owner=user,
+            provider=ExternalRepoConnection.Provider.GITHUB,
+            label="GitHub personal",
+            access_token="ghp_test_token",
+        )
+        WorkspaceInvitation.objects.create(
+            workspace=workspace,
+            invited_by=user,
+            email="invitee@example.com",
+            role=WorkspaceMembership.Role.VIEWER,
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("core:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="dashboard-bootstrap"')
+        self.assertContains(response, "bootstrap-app")
+        self.assertContains(response, "Equipo plataforma")
+        self.assertContains(response, "GitHub personal")
+        self.assertContains(response, str(analysis.id))
+
+
+class DashboardSerializationPerformanceTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="perf-user",
+            password="super-secret-pass-123",
+            email="perf-user@example.com",
+        )
+        self.request = RequestFactory().get("/")
+
+    def test_project_analysis_serializer_uses_prefetched_relations_without_extra_queries(self):
+        workspace = Workspace.objects.create(
+            owner=self.user,
+            name="Perf workspace",
+            slug="perf-workspace",
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.OWNER,
+        )
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            workspace=workspace,
+            project_name="perf-analysis",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            generation_profile=ProjectAnalysis.GenerationProfile.PRODUCTION,
+            repository_url="https://github.com/acme/perf-analysis",
+            status=ProjectAnalysis.Status.READY,
+        )
+        GeneratedArtifact.objects.create(
+            analysis=analysis,
+            kind=GeneratedArtifact.Kind.DOCKERFILE,
+            path="Dockerfile",
+            content="FROM python:3.13-slim",
+        )
+        ExecutionJob.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.VALIDATION,
+            status=ExecutionJob.Status.READY,
+            label="validation",
+        )
+        ExecutionJob.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            kind=ExecutionJob.Kind.GITHUB_PR,
+            status=ExecutionJob.Status.QUEUED,
+            label="pr",
+        )
+        PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.READY,
+            runtime_kind=PreviewRun.RuntimeKind.CONTAINER,
+            access_url="https://preview.example.com",
+        )
+        prefetched = ProjectAnalysis.objects.with_related().get(pk=analysis.pk)
+
+        with CaptureQueriesContext(connection) as queries:
+            payload = ProjectAnalysisSerializer(prefetched, context={"request": self.request}).data
+
+        self.assertEqual(len(queries), 0)
+        self.assertEqual(payload["latest_validation_job"]["kind"], ExecutionJob.Kind.VALIDATION)
+        self.assertEqual(payload["latest_github_pr_job"]["kind"], ExecutionJob.Kind.GITHUB_PR)
+        self.assertEqual(payload["active_preview"]["status"], PreviewRun.Status.READY)
+
+    def test_workspace_serializer_uses_prefetched_relations_without_extra_queries(self):
+        workspace = Workspace.objects.create(
+            owner=self.user,
+            name="Perf team",
+            slug="perf-team",
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.OWNER,
+        )
+        WorkspaceInvitation.objects.create(
+            workspace=workspace,
+            invited_by=self.user,
+            email="invitee@example.com",
+            role=WorkspaceMembership.Role.EDITOR,
+        )
+        prefetched = Workspace.objects.for_user(self.user).prefetch_related(
+            "memberships__user",
+            "invitations__invited_user",
+            "invitations__invited_by",
+        ).get(pk=workspace.pk)
+
+        with CaptureQueriesContext(connection) as queries:
+            payload = WorkspaceSerializer(prefetched).data
+
+        self.assertEqual(len(queries), 0)
+        self.assertEqual(payload["member_count"], 1)
+        self.assertEqual(payload["pending_invitations"][0]["email"], "invitee@example.com")
 
 
 @override_settings(AUTODOCKER_ASYNC_MODE="inline", CELERY_TASK_ALWAYS_EAGER=False)
