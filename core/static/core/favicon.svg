@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">AutoDocker favicon</title>
+  <desc id="desc">Contenedor estilizado con una flecha ascendente interna.</desc>
+  <defs>
+    <linearGradient id="shell" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1ef2c7"/>
+      <stop offset="1" stop-color="#0aa88a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="22" y1="18" x2="42" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e9fff8"/>
+      <stop offset="1" stop-color="#9effe4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0b1116"/>
+  <path
+    d="M20 18.5h24c4.7 0 8.5 3.8 8.5 8.5v12.3c0 4.7-3.8 8.5-8.5 8.5H20c-4.7 0-8.5-3.8-8.5-8.5V27c0-4.7 3.8-8.5 8.5-8.5Z"
+    fill="none"
+    stroke="url(#shell)"
+    stroke-width="5"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M24 24h16.5l5.5 5.5"
+    fill="none"
+    stroke="url(#shell)"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M31.5 42V29.5"
+    fill="none"
+    stroke="url(#accent)"
+    stroke-width="5"
+    stroke-linecap="round"
+  />
+  <path
+    d="m25.5 35.5 6-6 6 6"
+    fill="none"
+    stroke="url(#accent)"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

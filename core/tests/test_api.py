@@ -180,6 +180,7 @@ class DashboardAuthTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "core/js/dashboard_form.js")
         self.assertContains(response, "core/js/dashboard_collections.js")
+        self.assertContains(response, "core/favicon.svg")
 
     @override_settings(
         AUTODOCKER_PREVIEW_BACKEND="remote_runner",
