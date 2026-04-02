@@ -185,19 +185,27 @@ python manage.py runserver
 
 ### Opción 2: desarrollo con Docker Compose
 
-1. Creá el archivo de entorno para Docker.
+1. Creá el archivo de entorno base.
 
 ```bash
-copy .env.docker.example .env.docker
+copy .env.example .env
 ```
 
-2. Levantá el stack.
+2. Ajustá `.env` para modo Compose:
+
+- `DJANGO_USE_SQLITE=false`
+- `POSTGRES_HOST=db`
+- `POSTGRES_PORT=5432`
+- `AUTODOCKER_ASYNC_MODE=celery`
+- `AUTODOCKER_ENABLE_RUNTIME_JOBS=true` solo si querés validación o previews locales con Docker
+
+3. Levantá el stack.
 
 ```bash
 docker compose up --build
 ```
 
-3. Creá un superusuario dentro del contenedor web.
+4. Creá un superusuario dentro del contenedor web.
 
 ```bash
 docker compose exec web python manage.py createsuperuser
@@ -355,12 +363,24 @@ autodocker/
 
 ## Variables de entorno
 
-El proyecto trae varias plantillas:
+### Archivos y uso
 
-- `.env.example` para desarrollo simple con `manage.py`
-- `.env.docker.example` para `docker compose`
-- `.env.prod.example` para producción
-- `.env.runner.example` para el host dedicado del preview runner
+| Archivo | Uso | Cuándo usarlo |
+| --- | --- | --- |
+| `.env` | entorno real base del desarrollo local | cuando corrés la app principal con `manage.py` o querés usarlo como base para `docker compose` |
+| `.env.local-app` | entorno real de la app principal apuntando a un runner remoto/local | cuando probás el flujo `remote_runner` en tu máquina |
+| `.env.local-runner` | entorno real del host `preview_runner` local | cuando levantás el runner dedicado en local |
+| `.env.prod` | entorno real de producción | cuando desplegás la app principal o simulás producción |
+| `.env.example` | plantilla canónica de desarrollo local | punto de partida para crear `.env` |
+| `.env.local-app.example` | plantilla de app principal local con `remote_runner` | punto de partida para crear `.env.local-app` |
+| `.env.local-runner.example` | plantilla de runner local | punto de partida para crear `.env.local-runner` |
+| `.env.prod.example` | plantilla de producción | punto de partida para crear `.env.prod` |
+
+### Criterio actual
+
+- `.env.example` quedó como la plantilla base para desarrollo local simple con `manage.py`
+- si querés usar `docker compose`, también partís de `.env.example`, pero ajustando base de datos, async mode y runtime según el stack Compose
+- `.env.local-app(.example)` y `.env.local-runner(.example)` quedan reservados al flujo de smoke test o staging local con `remote_runner`
 
 ### Variables mínimas para desarrollo local
 
@@ -412,7 +432,7 @@ El proyecto trae varias plantillas:
 
 Para correr el host dedicado del runner con este mismo código:
 
-1. Copiá `.env.runner.example` a `.env.runner`.
+1. Copiá `.env.local-runner.example` a `.env.local-runner`.
 2. Configurá `AUTODOCKER_DEPLOYMENT_ROLE=preview_runner`.
 3. Asegurá acceso real a Docker en ese host.
 4. Levantá Django con ese archivo de entorno; el servicio expone la API privada `POST /previews`, `GET /previews/{id}`, `GET /previews/{id}/logs` y `POST /previews/{id}/stop`.

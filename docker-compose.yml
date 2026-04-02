@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - .env.docker
+      - .env
     environment:
       RUN_AS_ROOT: "true"
       RUN_WAIT_FOR_DATABASE: "true"
@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - .env.docker
+      - .env
     environment:
       C_FORCE_ROOT: "1"
       RUN_AS_ROOT: "true"
