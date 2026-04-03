@@ -20,11 +20,10 @@
     </div>
 
     <nav class="sidebar-nav" aria-label="Primary">
-      <button type="button" class="nav-link is-active" data-run-tab-target="summary" data-scroll-target="overview-hero">Overview</button>
-      <button type="button" class="nav-link" data-workbench-target="analysis-form">New Analysis</button>
-      <button type="button" class="nav-link" data-run-tab-target="artifacts">Artifacts</button>
-      <button type="button" class="nav-link" data-run-tab-target="delivery">Delivery</button>
-      <button type="button" class="nav-link" data-run-tab-target="workspace">Workspace</button>
+      <button type="button" class="nav-link is-active" data-sidebar-target="overview" data-scroll-target="overview-hero">Overview</button>
+      <button type="button" class="nav-link" data-sidebar-target="analysis" data-workbench-target="analysis-form">New Analysis</button>
+      <button type="button" class="nav-link" data-sidebar-target="history" data-scroll-target="history-panel">Saved Runs</button>
+      <button type="button" class="nav-link" data-sidebar-target="workspace" data-run-tab-target="workspace" data-scroll-target="analysis-result">Workspace</button>
     </nav>
 
     <div class="sidebar-meta">
@@ -447,7 +446,7 @@
         </div>
 
         <aside class="workspace-right" style="display: grid; gap: 20px; align-self: start;">
-          <section class="panel history-panel">
+          <section id="history-panel" class="panel history-panel">
             <div class="section-head">
               <div>
                 <p class="section-kicker">Recent activity</p>

@@ -79,8 +79,7 @@
     };
     const runTabButtons = Array.from(document.querySelectorAll("[data-run-tab]"));
     const runPanels = Array.from(document.querySelectorAll("[data-run-panel]"));
-    const sidebarTabButtons = Array.from(document.querySelectorAll("[data-run-tab-target]"));
-    const workbenchButtons = Array.from(document.querySelectorAll("[data-workbench-target]"));
+    const sidebarNavButtons = Array.from(document.querySelectorAll(".sidebar-nav .nav-link"));
     const previewUiAvailable = Boolean(
         elements.preview &&
         elements.stopPreview &&
@@ -237,7 +236,9 @@
         renderConnections(bootstrap.connections || []);
         renderWorkspaces(bootstrap.workspaces || []);
         renderIncomingInvitations(bootstrap.incoming_invitations || []);
-        renderHistory(bootstrap.recent_analyses || []);
+        const recentAnalyses = bootstrap.recent_analyses || [];
+        renderHistory(recentAnalyses);
+        ensureSelectedAnalysis(recentAnalyses);
     }
 
     function reportInitDuration(source) {
@@ -267,30 +268,42 @@
         runTabButtons.forEach((button) => {
             button.addEventListener("click", () => setActiveRunTab(button.dataset.runTab));
         });
-        sidebarTabButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-                setActiveRunTab(button.dataset.runTabTarget);
-                const scrollTarget =
-                    document.getElementById(button.dataset.scrollTarget || "") || elements.panel;
-                scrollTarget?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                });
-            });
-        });
-        workbenchButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-                sidebarTabButtons.forEach((item) => item.classList.remove("is-active"));
-                workbenchButtons.forEach((item) => {
-                    item.classList.toggle("is-active", item === button);
-                });
-                document.getElementById(button.dataset.workbenchTarget)?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                });
+        sidebarNavButtons.forEach((button) => {
+            button.addEventListener("click", async () => {
+                await handleSidebarNavigation(button);
             });
         });
         window.addEventListener("resize", onViewportResize);
+    }
+
+    async function handleSidebarNavigation(button) {
+        const sidebarTarget = button.dataset.sidebarTarget || "";
+        const runTabTarget = button.dataset.runTabTarget || "";
+        const workbenchTarget = button.dataset.workbenchTarget || "";
+        const scrollTargetId = button.dataset.scrollTarget || workbenchTarget;
+
+        if (runTabTarget) {
+            await ensureSelectedAnalysis(state.historyAnalyses || []);
+            if (state.analysis) {
+                setActiveRunTab(runTabTarget);
+            }
+        }
+
+        if (scrollTargetId) {
+            const scrollTarget = document.getElementById(scrollTargetId) || elements.panel;
+            scrollTarget?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+            });
+        }
+
+        setActiveSidebarNav(sidebarTarget);
+    }
+
+    function setActiveSidebarNav(target) {
+        sidebarNavButtons.forEach((button) => {
+            button.classList.toggle("is-active", button.dataset.sidebarTarget === target);
+        });
     }
 
     function setActiveRunTab(tabId) {
@@ -304,10 +317,6 @@
         runPanels.forEach((panel) => {
             panel.hidden = panel.dataset.runPanel !== state.activeRunTab;
         });
-        sidebarTabButtons.forEach((button) => {
-            button.classList.toggle("is-active", button.dataset.runTabTarget === state.activeRunTab);
-        });
-        workbenchButtons.forEach((button) => button.classList.remove("is-active"));
     }
 
     function getCsrfToken() {
@@ -610,6 +619,19 @@
         if (state.analysis && state.analysis.workspace?.id !== state.currentWorkspaceId) {
             clearCurrentAnalysis();
         }
+        await ensureSelectedAnalysis(analyses);
+    }
+
+    async function ensureSelectedAnalysis(analyses) {
+        const availableAnalyses = analyses || [];
+        if (!availableAnalyses.length) {
+            clearCurrentAnalysis();
+            return;
+        }
+        if (state.analysis && availableAnalyses.some((analysis) => analysis.id === state.analysis.id)) {
+            return;
+        }
+        await fetchAnalysis(availableAnalyses[0].id);
     }
 
     async function onWorkspaceChange(event) {
