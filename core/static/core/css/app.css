@@ -1046,6 +1046,10 @@ textarea:focus-visible,
   color: #bfdbfe;
 }
 
+.run-tab-hint {
+  margin-top: -8px;
+}
+
 .run-panel {
   display: grid;
   gap: 18px;

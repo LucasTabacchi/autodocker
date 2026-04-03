@@ -212,6 +212,7 @@ class DashboardAuthTests(TestCase):
             ).exists()
         )
 
+
     def test_signup_rejects_invalid_password_confirmation(self):
         response = self.client.post(
             reverse("signup"),

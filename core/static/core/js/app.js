@@ -20,6 +20,7 @@
         subtitle: byId("result-subtitle"),
         summaryGrid: byId("summary-grid"),
         recommendations: byId("recommendations"),
+        runTabHint: byId("run-tab-hint"),
         tabs: byId("artifact-tabs"),
         editors: byId("artifact-editors"),
         history: byId("history-list"),
@@ -170,6 +171,7 @@
     async function init() {
         formHelpers.wireDropzoneControls?.(elements);
         bindEvents();
+        clearCurrentAnalysis();
         renderProfile(null);
         renderSecurityReport(null);
         renderHealthchecks(null);
@@ -292,6 +294,9 @@
     }
 
     function setActiveRunTab(tabId) {
+        if (!state.analysis) {
+            return;
+        }
         state.activeRunTab = tabId || "summary";
         runTabButtons.forEach((button) => {
             button.classList.toggle("is-active", button.dataset.runTab === state.activeRunTab);
@@ -750,6 +755,10 @@
         elements.panel.classList.remove("is-empty");
         elements.title.textContent = `${analysis.project_name} · ${analysis.detected_framework || "Unclassified stack"}`;
         elements.subtitle.textContent = buildSubtitle(analysis);
+        elements.runTabHint.textContent = "Switch between summary, artifacts, delivery, and workspace for this run.";
+        runTabButtons.forEach((button) => {
+            button.disabled = false;
+        });
 
         const isReady = analysis.status === "ready";
         const components = analysis.analysis_payload?.components || [];
@@ -836,6 +845,7 @@
         elements.panel.classList.add("is-empty");
         elements.title.textContent = "No active run selected";
         elements.subtitle.textContent = "Run a new analysis or load one from history to inspect artifacts, validation, and delivery actions.";
+        elements.runTabHint.textContent = "Select or create a run to unlock these sections.";
         elements.summaryGrid.innerHTML = "";
         elements.recommendations.innerHTML = "";
         elements.tabs.innerHTML = "";
@@ -853,6 +863,14 @@
         }
         elements.download.href = "#";
         elements.download.classList.add("is-disabled");
+        runTabButtons.forEach((button, index) => {
+            button.disabled = true;
+            button.classList.toggle("is-active", index === 0);
+        });
+        runPanels.forEach((panel) => {
+            panel.hidden = panel.dataset.runPanel !== "summary";
+        });
+        state.activeRunTab = "summary";
         elements.validate.title = "Validate build";
         if (previewUiAvailable) {
             elements.preview.title = "Preview";
