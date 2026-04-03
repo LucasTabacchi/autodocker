@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm, UserCreationForm
 
 
 class AnalysisSubmissionForm(forms.Form):
@@ -47,6 +47,40 @@ class AnalysisSubmissionForm(forms.Form):
         if archive and not archive.name.lower().endswith(".zip"):
             raise forms.ValidationError("Only .zip archives are supported for this flow.")
         return cleaned_data
+
+
+class PasswordResetRequestForm(PasswordResetForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["email"].label = "Email"
+        self.fields["email"].widget.attrs.update(
+            {
+                "placeholder": "lucas@company.com",
+                "autocomplete": "email",
+                "class": "signup-input",
+            }
+        )
+
+
+class PasswordResetConfirmCustomForm(SetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["new_password1"].label = "New password"
+        self.fields["new_password1"].widget.attrs.update(
+            {
+                "placeholder": "Minimum 8 characters",
+                "autocomplete": "new-password",
+                "class": "signup-input signup-input--password",
+            }
+        )
+        self.fields["new_password2"].label = "Confirm new password"
+        self.fields["new_password2"].widget.attrs.update(
+            {
+                "placeholder": "Repeat your new password",
+                "autocomplete": "new-password",
+                "class": "signup-input signup-input--password",
+            }
+        )
 
 
 class SignUpForm(UserCreationForm):

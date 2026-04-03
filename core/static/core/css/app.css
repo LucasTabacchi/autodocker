@@ -386,6 +386,13 @@ textarea:focus-visible,
   color: #fdb7b7;
 }
 
+.form-message--info {
+  display: block;
+  background: var(--primary-soft);
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  color: #dbeafe;
+}
+
 .icon-chip {
   display: inline-grid;
   place-items: center;
@@ -406,23 +413,28 @@ textarea:focus-visible,
 .auth-page {
   width: min(1240px, calc(100% - 32px));
   margin: 0 auto;
-  min-height: 100vh;
+  min-height: calc(100vh - 32px);
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: var(--space-8);
-  align-items: center;
+  align-items: start;
   padding: var(--space-8) 0;
 }
 
 .auth-showcase {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
   padding: var(--space-10);
   border-radius: var(--radius-xl);
   border: 1px solid rgba(96, 165, 250, 0.12);
   background:
     linear-gradient(180deg, rgba(18, 25, 43, 0.9), rgba(11, 16, 32, 0.86)),
     radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 34%);
-  overflow: hidden;
+  min-height: 100%;
+  overflow: clip;
 }
 
 .auth-showcase::before {
@@ -447,7 +459,7 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 56px;
+  margin-bottom: 44px;
 }
 
 .auth-brand__mark {
@@ -469,10 +481,10 @@ textarea:focus-visible,
 }
 
 .auth-showcase h1 {
-  max-width: 11ch;
+  max-width: 10ch;
   margin-bottom: 18px;
   font-family: var(--font-heading);
-  font-size: clamp(40px, 5vw, 64px);
+  font-size: clamp(34px, 4vw, 58px);
   line-height: 0.98;
   letter-spacing: -0.05em;
 }
@@ -485,7 +497,7 @@ textarea:focus-visible,
 }
 
 .auth-proof-list {
-  margin-top: 28px;
+  margin-top: 24px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -504,14 +516,14 @@ textarea:focus-visible,
 }
 
 .auth-showcase__footer {
-  margin-top: 40px;
+  margin-top: auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .auth-proof-card {
-  padding: 18px;
+  padding: 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-soft);
   background: rgba(24, 34, 53, 0.74);
@@ -519,19 +531,22 @@ textarea:focus-visible,
 
 .auth-proof-card strong {
   display: block;
-  margin: 12px 0 6px;
-  font-size: 15px;
+  margin: 10px 0 6px;
+  font-size: 14px;
 }
 
 .auth-proof-card p {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-soft);
   max-width: none;
+  line-height: 1.55;
 }
 
 .auth-panel {
   display: flex;
   justify-content: center;
+  align-items: center;
+  min-height: 100%;
 }
 
 .auth-panel__card {
@@ -580,6 +595,10 @@ textarea:focus-visible,
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.auth-helper + .auth-helper {
+  margin-top: 10px;
 }
 
 .auth-helper a {

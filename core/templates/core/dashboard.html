@@ -20,7 +20,7 @@
     </div>
 
     <nav class="sidebar-nav" aria-label="Primary">
-      <button type="button" class="nav-link is-active" data-run-tab-target="summary">Overview</button>
+      <button type="button" class="nav-link is-active" data-run-tab-target="summary" data-scroll-target="overview-hero">Overview</button>
       <button type="button" class="nav-link" data-workbench-target="analysis-form">New Analysis</button>
       <button type="button" class="nav-link" data-run-tab-target="artifacts">Artifacts</button>
       <button type="button" class="nav-link" data-run-tab-target="delivery">Delivery</button>
@@ -84,7 +84,7 @@
     </header>
 
     <div class="dashboard-content">
-      <section class="panel overview-hero">
+      <section id="overview-hero" class="panel overview-hero">
         <div>
           <p class="section-kicker">Developer control center</p>
           <h1>Generate, validate, and ship Docker artifacts without leaving the workspace.</h1>

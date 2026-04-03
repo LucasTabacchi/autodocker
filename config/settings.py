@@ -286,6 +286,15 @@ EMAIL_BACKEND = env(
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
 DEFAULT_FROM_EMAIL = env("DJANGO_DEFAULT_FROM_EMAIL", "autodocker@localhost")
+EMAIL_HOST = env("DJANGO_EMAIL_HOST", "smtp-relay.brevo.com")
+EMAIL_PORT = int(env("DJANGO_EMAIL_PORT", "587"))
+EMAIL_HOST_USER = env("DJANGO_EMAIL_HOST_USER", "") or ""
+EMAIL_HOST_PASSWORD = env("DJANGO_EMAIL_HOST_PASSWORD", "") or ""
+EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env_bool("DJANGO_EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = int(env("DJANGO_EMAIL_TIMEOUT", "30"))
+EMAIL_FILE_PATH = env("DJANGO_EMAIL_FILE_PATH", str(BASE_DIR / "tmp" / "emails"))
+PASSWORD_RESET_TIMEOUT = int(env("DJANGO_PASSWORD_RESET_TIMEOUT", str(60 * 60 * 24)))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG)

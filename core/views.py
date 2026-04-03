@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import login
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpRequest
 from django.http import HttpResponseRedirect, JsonResponse
@@ -16,7 +17,12 @@ from core.api.serializers import (
     DashboardWorkspaceInvitationSerializer,
     DashboardWorkspaceSerializer,
 )
-from core.forms import AnalysisSubmissionForm, SignUpForm
+from core.forms import (
+    AnalysisSubmissionForm,
+    PasswordResetConfirmCustomForm,
+    PasswordResetRequestForm,
+    SignUpForm,
+)
 from core.models import ExternalRepoConnection, ProjectAnalysis, Workspace
 from core.services.runtime import preview_runtime_capability
 from core.services.workspaces import (
@@ -157,6 +163,33 @@ class SignUpView(FormView):
         ensure_personal_workspace(user)
         login(self.request, user)
         return HttpResponseRedirect(self.get_success_url())
+
+
+class PasswordResetRequestView(auth_views.PasswordResetView):
+    email_template_name = "registration/password_reset_email.txt"
+    form_class = PasswordResetRequestForm
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = reverse_lazy("password_reset_done")
+    template_name = "registration/password_reset_form.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["page_kicker"] = "Password reset"
+        return context
+
+
+class PasswordResetDoneCustomView(auth_views.PasswordResetDoneView):
+    template_name = "registration/password_reset_done.html"
+
+
+class PasswordResetConfirmCustomView(auth_views.PasswordResetConfirmView):
+    form_class = PasswordResetConfirmCustomForm
+    success_url = reverse_lazy("password_reset_complete")
+    template_name = "registration/password_reset_confirm.html"
+
+
+class PasswordResetCompleteCustomView(auth_views.PasswordResetCompleteView):
+    template_name = "registration/password_reset_complete.html"
 
 
 class HealthcheckView(View):

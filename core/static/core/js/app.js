@@ -266,10 +266,22 @@
             button.addEventListener("click", () => setActiveRunTab(button.dataset.runTab));
         });
         sidebarTabButtons.forEach((button) => {
-            button.addEventListener("click", () => setActiveRunTab(button.dataset.runTabTarget));
+            button.addEventListener("click", () => {
+                setActiveRunTab(button.dataset.runTabTarget);
+                const scrollTarget =
+                    document.getElementById(button.dataset.scrollTarget || "") || elements.panel;
+                scrollTarget?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                });
+            });
         });
         workbenchButtons.forEach((button) => {
             button.addEventListener("click", () => {
+                sidebarTabButtons.forEach((item) => item.classList.remove("is-active"));
+                workbenchButtons.forEach((item) => {
+                    item.classList.toggle("is-active", item === button);
+                });
                 document.getElementById(button.dataset.workbenchTarget)?.scrollIntoView({
                     behavior: "smooth",
                     block: "start",
@@ -290,6 +302,7 @@
         sidebarTabButtons.forEach((button) => {
             button.classList.toggle("is-active", button.dataset.runTabTarget === state.activeRunTab);
         });
+        workbenchButtons.forEach((button) => button.classList.remove("is-active"));
     }
 
     function getCsrfToken() {

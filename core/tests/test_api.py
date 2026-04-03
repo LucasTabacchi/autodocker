@@ -69,7 +69,84 @@ class DashboardAuthTests(TestCase):
         response = self.client.get(reverse("login"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("signup"))
+        self.assertContains(response, reverse("password_reset"))
         self.assertNotContains(response, "<form")
+
+    def test_password_reset_page_renders(self):
+        response = self.client.get(reverse("password_reset"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Reset your password")
+        self.assertContains(response, "Send reset link")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_password_reset_sends_email_for_existing_account(self):
+        self.user.email = "lucas@example.com"
+        self.user.save(update_fields=["email"])
+
+        response = self.client.post(
+            reverse("password_reset"),
+            {"email": "lucas@example.com"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Reset your AutoDocker password", mail.outbox[0].subject)
+        self.assertIn("/accounts/password-reset/", mail.outbox[0].body)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_password_reset_does_not_leak_unknown_email(self):
+        response = self.client.post(
+            reverse("password_reset"),
+            {"email": "unknown@example.com"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_password_reset_done_page_renders(self):
+        response = self.client.get(reverse("password_reset_done"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Check your inbox")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_password_reset_confirm_allows_setting_new_password(self):
+        self.user.email = "lucas@example.com"
+        self.user.save(update_fields=["email"])
+        self.client.post(reverse("password_reset"), {"email": "lucas@example.com"})
+
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        reset_path = next(
+            line.strip()
+            for line in body.splitlines()
+            if "/accounts/password-reset/" in line and "/confirm/" in line
+        )
+        confirm_path = reset_path.replace("http://testserver", "")
+
+        get_response = self.client.get(confirm_path, follow=True)
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "Set a new password")
+        final_confirm_path = get_response.request["PATH_INFO"]
+
+        post_response = self.client.post(
+            final_confirm_path,
+            {
+                "new_password1": "brand-new-pass-123",
+                "new_password2": "brand-new-pass-123",
+            },
+        )
+
+        self.assertRedirects(post_response, reverse("password_reset_complete"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("brand-new-pass-123"))
+
+    def test_password_reset_complete_page_renders(self):
+        response = self.client.get(reverse("password_reset_complete"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Password updated")
 
     def test_login_json_redirects_to_dashboard_and_logs_user_in(self):
         response = self.client.post(
