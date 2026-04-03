@@ -1060,6 +1060,10 @@ textarea:focus-visible,
   gap: 18px;
 }
 
+.run-panel[hidden] {
+  display: none !important;
+}
+
 .summary-grid,
 .ops-grid {
   display: grid;
