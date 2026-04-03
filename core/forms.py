@@ -11,7 +11,7 @@ class AnalysisSubmissionForm(forms.Form):
         required=False,
         widget=forms.TextInput(
             attrs={
-                "placeholder": "Mi API, monorepo-platform, fastapi-service",
+                "placeholder": "payments-api, monorepo-platform, fastapi-service",
             }
         ),
     )
@@ -26,8 +26,8 @@ class AnalysisSubmissionForm(forms.Form):
     )
     generation_profile = forms.ChoiceField(
         choices=(
-            ("production", "Producción"),
-            ("development", "Desarrollo"),
+            ("production", "Production"),
+            ("development", "Development"),
             ("ci", "CI"),
         ),
         initial="production",
@@ -41,11 +41,11 @@ class AnalysisSubmissionForm(forms.Form):
         repository_url = cleaned_data.get("repository_url")
 
         if not archive and not repository_url:
-            raise forms.ValidationError("Subí un archivo .zip o indicá una URL Git.")
+            raise forms.ValidationError("Upload a .zip archive or provide a Git repository URL.")
         if archive and repository_url:
-            raise forms.ValidationError("Elegí una sola fuente por análisis.")
+            raise forms.ValidationError("Choose a single source for each analysis.")
         if archive and not archive.name.lower().endswith(".zip"):
-            raise forms.ValidationError("Solo se admiten archivos .zip en este MVP.")
+            raise forms.ValidationError("Only .zip archives are supported for this flow.")
         return cleaned_data
 
 
@@ -61,7 +61,7 @@ class SignUpForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["first_name"].label = "Nombre"
+        self.fields["first_name"].label = "First name"
         self.fields["first_name"].widget.attrs.update(
             {
                 "placeholder": "Lucas",
@@ -69,15 +69,15 @@ class SignUpForm(UserCreationForm):
                 "class": "signup-input",
             }
         )
-        self.fields["last_name"].label = "Apellido"
+        self.fields["last_name"].label = "Last name"
         self.fields["last_name"].widget.attrs.update(
             {
-                "placeholder": "García",
+                "placeholder": "Garcia",
                 "autocomplete": "family-name",
                 "class": "signup-input",
             }
         )
-        self.fields["username"].label = "Usuario"
+        self.fields["username"].label = "Username"
         self.fields["username"].widget.attrs.update(
             {
                 "placeholder": "lucas-garcia",
@@ -88,28 +88,28 @@ class SignUpForm(UserCreationForm):
         self.fields["email"].label = "Email"
         self.fields["email"].widget.attrs.update(
             {
-                "placeholder": "lucas@empresa.com",
+                "placeholder": "lucas@company.com",
                 "autocomplete": "email",
                 "class": "signup-input",
             }
         )
-        self.fields["password1"].label = "Contraseña"
+        self.fields["password1"].label = "Password"
         self.fields["password1"].widget.attrs.update(
             {
-                "placeholder": "Mínimo 8 caracteres",
+                "placeholder": "Minimum 8 characters",
                 "autocomplete": "new-password",
                 "class": "signup-input signup-input--password",
             }
         )
-        self.fields["password2"].label = "Repetir contraseña"
+        self.fields["password2"].label = "Confirm password"
         self.fields["password2"].widget.attrs.update(
             {
-                "placeholder": "Repetí la contraseña",
+                "placeholder": "Repeat your password",
                 "autocomplete": "new-password",
                 "class": "signup-input signup-input--password",
             }
         )
-        self.fields["accept_terms"].label = "Acepto los Términos de uso y la Política de privacidad de AutoDocker."
+        self.fields["accept_terms"].label = "I accept the Terms of Use and Privacy Policy of AutoDocker."
         self.fields["accept_terms"].widget.attrs.update(
             {
                 "class": "signup-checkbox",

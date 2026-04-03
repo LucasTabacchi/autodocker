@@ -9,13 +9,13 @@
 
     function buildErrorMessage(error) {
         if (!error) {
-            return "Ocurrió un error inesperado.";
+            return "An unexpected error occurred.";
         }
 
         if (typeof error === "string") {
             const text = error.trim();
             if (text.startsWith("<!DOCTYPE") || text.startsWith("<html")) {
-                return "El servidor devolvió una respuesta HTML inesperada. Revisá los logs del backend.";
+                return "The server returned an unexpected HTML response. Check the backend logs.";
             }
             return text;
         }
@@ -38,28 +38,28 @@
             }
         }
 
-        return "Ocurrió un error inesperado.";
+        return "An unexpected error occurred.";
     }
 
     function labelStatus(status) {
         return (
             {
-                queued: "En cola",
-                analyzing: "Analizando",
-                running: "En ejecución",
+                queued: "Queued",
+                analyzing: "Analyzing",
+                running: "Running",
                 ready: "Ready",
-                failed: "Falló",
-                canceled: "Cancelado",
-                stopped: "Detenido",
-            }[status] || status || "Sin estado"
+                failed: "Failed",
+                canceled: "Canceled",
+                stopped: "Stopped",
+            }[status] || status || "Unknown"
         );
     }
 
     function profileLabel(profile) {
         return (
             {
-                production: "Producción",
-                development: "Desarrollo",
+                production: "Production",
+                development: "Development",
                 ci: "CI",
             }[profile] || profile
         );
@@ -68,11 +68,11 @@
     function deliveryStatusLabel(status) {
         return (
             {
-                pending: "pendiente",
-                in_app: "visible en la app",
-                sent: "email enviado",
-                failed: "email fallido",
-            }[status] || status || "pendiente"
+                pending: "pending",
+                in_app: "available in app",
+                sent: "email sent",
+                failed: "email failed",
+            }[status] || status || "pending"
         );
     }
 

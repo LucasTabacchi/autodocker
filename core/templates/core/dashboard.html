@@ -1,497 +1,501 @@
+{% extends "base.html" %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AutoDocker</title>
-    <link rel="icon" type="image/svg+xml" href="{% static 'core/favicon.svg' %}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'core/css/app.css' %}">
-</head>
-<body>
-<main class="shell">
 
-    <!-- ── TOPBAR ── -->
-    <header class="topbar panel">
-        <div class="topbar__brand">
-            <div class="topbar__logo">AD</div>
-            <div>
-                <span class="topbar__brand-name">AutoDocker</span>
-                <span class="topbar__brand-sub">Control Surface</span>
-            </div>
+{% block title %}AutoDocker{% endblock %}
+
+{% block content %}
+<main class="dashboard-shell">
+  <aside class="dashboard-sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="icon-svg">
+          <path d="M6 7.5A2.5 2.5 0 0 1 8.5 5h7A2.5 2.5 0 0 1 18 7.5v9A2.5 2.5 0 0 1 15.5 19h-7A2.5 2.5 0 0 1 6 16.5z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M9 9h6M9 12h6M9 15h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="sidebar-brand__copy">
+        <strong>AutoDocker</strong>
+        <span>Developer control center</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Primary">
+      <button type="button" class="nav-link is-active" data-run-tab-target="summary">Overview</button>
+      <button type="button" class="nav-link" data-workbench-target="analysis-form">New Analysis</button>
+      <button type="button" class="nav-link" data-run-tab-target="artifacts">Artifacts</button>
+      <button type="button" class="nav-link" data-run-tab-target="delivery">Delivery</button>
+      <button type="button" class="nav-link" data-run-tab-target="workspace">Workspace</button>
+    </nav>
+
+    <div class="sidebar-meta">
+      <section class="panel">
+        <p class="section-kicker">Platform status</p>
+        <h3 style="margin: 10px 0 8px; font-family: var(--font-heading); letter-spacing: -0.03em;">Centralized operations</h3>
+        <p class="empty-copy">
+          Detect the stack, generate artifacts, validate runtime behavior, and coordinate delivery from a single interface.
+        </p>
+      </section>
+
+      <section class="panel">
+        <p class="section-kicker">Pipeline</p>
+        <div class="feature-list" style="margin-top: 14px;">
+          <li>Artifact generation with embedded editing.</li>
+          <li>Reproducible validation and repository diff inspection.</li>
+          <li>Previews and pull requests integrated into the flow.</li>
         </div>
-        <div class="topbar__actions">
-            <div class="topbar__status">
-                <span class="topbar__status-dot"></span>
-                Sistema activo
-            </div>
-            <label class="inline-field inline-field--workspace">
-                <span>Workspace</span>
-                <select id="workspace-select">
-                    {% for workspace in workspaces %}
-                        <option value="{{ workspace.id }}"
-                            {% if active_workspace and workspace.id == active_workspace.id %}selected{% endif %}>
-                            {{ workspace.name }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </label>
-            <div class="topbar__user">
-                <div class="topbar__avatar">{{ request.user.username|slice:":1" }}</div>
-                <span class="topbar__username">{{ request.user.username }}</span>
-            </div>
-            <form action="{% url 'logout' %}" method="post">
-                {% csrf_token %}
-                <button type="submit" class="topbar__logout">Salir →</button>
-            </form>
+      </section>
+    </div>
+  </aside>
+
+  <section class="dashboard-main">
+    <header class="dashboard-topbar">
+      <div>
+        <p class="section-kicker">Control surface</p>
+        <h1 style="margin-top: 8px; font-family: var(--font-heading); font-size: clamp(26px, 3vw, 36px); letter-spacing: -0.04em;">Operational workspace</h1>
+      </div>
+
+      <div class="topbar__actions">
+        <span id="analysis-status" class="badge">
+          <span class="badge-dot"></span>
+          Ready
+        </span>
+
+        <label class="inline-field inline-field--workspace">
+          <span>Workspace</span>
+          <select id="workspace-select">
+            {% for workspace in workspaces %}
+              <option value="{{ workspace.id }}" {% if active_workspace and workspace.id == active_workspace.id %}selected{% endif %}>
+                {{ workspace.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <div class="topbar__user">
+          <div class="topbar__avatar">{{ request.user.username|slice:":1" }}</div>
+          <span class="topbar__username">{{ request.user.username }}</span>
         </div>
+
+        <form action="{% url 'logout' %}" method="post">
+          {% csrf_token %}
+          <button type="submit" class="topbar__logout">Sign out</button>
+        </form>
+      </div>
     </header>
 
-    <!-- ── HERO ── -->
-    <section class="hero panel">
-        <div class="hero-copy">
-            <p class="eyebrow">AutoDocker / SaaS Blueprint</p>
-            <h1>Analizá un repo.<br>Generá Docker <em>listo para iterar.</em></h1>
-            <p class="lead">
-                Detección heurística de stack, generación de artefactos, validación con Docker,
-                diff contra el repo,
-                {% if preview_runtime_capability.enabled %}preview ejecutable,{% endif %}
-                PR automático y edición embebida con Monaco.
-            </p>
+    <div class="dashboard-content">
+      <section class="panel overview-hero">
+        <div>
+          <p class="section-kicker">Developer control center</p>
+          <h1>Generate, validate, and ship Docker artifacts without leaving the workspace.</h1>
+          <p class="section-copy">
+            Analyze a repository, inspect generated output, validate runtime assumptions, and deliver changes through previews or pull requests with clearer operational context.
+          </p>
         </div>
-        <div class="hero-metrics">
-            <article class="metric-card">
-                <span>Stacks soportados</span>
-                <strong>Node · Python · PHP · Java · Go · Rails</strong>
-            </article>
-            <article class="metric-card">
-                <span>Ejecución</span>
-                <strong>Web + worker + Redis + PostgreSQL</strong>
-            </article>
-            <article class="metric-card">
-                <span>Pipeline</span>
-                <strong>
-                    {% if preview_runtime_capability.enabled %}
-                        Detección → Artefactos → Preview → PR
-                    {% else %}
-                        Detección → Artefactos → PR
-                    {% endif %}
-                </strong>
-            </article>
+
+        <div class="overview-hero__actions">
+          <article class="overview-hero__metric">
+            <span class="section-kicker">Input</span>
+            <strong>ZIP upload or Git repository</strong>
+            <p class="empty-copy" style="margin-top: 8px;">Start from the source that fits the team workflow.</p>
+          </article>
+          <article class="overview-hero__metric">
+            <span class="section-kicker">Flow</span>
+            <strong>Analyze, review, validate, deliver</strong>
+            <p class="empty-copy" style="margin-top: 8px;">A clearer sequence for high-confidence Docker delivery.</p>
+          </article>
         </div>
-    </section>
+      </section>
 
-    <!-- ── WORKSPACE ── -->
-    <section class="workspace">
-        <div class="workspace-left">
+      <div class="dashboard-grid">
+        <div class="workspace-left" style="display: grid; gap: 20px;">
+          <section class="panel workbench-card">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">New analysis</p>
+                <h2 style="margin-top: 8px; font-family: var(--font-heading); font-size: 28px; letter-spacing: -0.04em;">Project source</h2>
+                <p class="empty-copy" style="margin-top: 8px;">Launch a new run with a repository URL or compressed source package.</p>
+              </div>
+            </div>
 
-            <!-- ── SUBMISSION PANEL ── -->
-            <section class="panel submission-panel">
-                <div class="section-head">
-                    <div>
-                        <p class="eyebrow">Nuevo análisis</p>
-                        <h2>Fuente del proyecto</h2>
-                    </div>
-                    <span id="analysis-status" class="badge">
-                        <span class="badge-dot"></span>
-                        Listo
-                    </span>
+            <form id="analysis-form" class="analysis-workbench" enctype="multipart/form-data">
+              {% csrf_token %}
+
+              <div class="source-toggle">
+                <button type="button" class="source-toggle__btn is-active" id="source-toggle-zip" onclick="setSource('zip')">
+                  Upload ZIP
+                </button>
+                <button type="button" class="source-toggle__btn" id="source-toggle-git" onclick="setSource('git')">
+                  Connect Git repository
+                </button>
+              </div>
+
+              <label class="field">
+                <span>Project name</span>
+                <input id="id_project_name" name="project_name" type="text" placeholder="payments-api, monorepo-platform, fastapi-service">
+              </label>
+
+              <div id="source-zip-fields">
+                <div class="field">
+                  <span>Source package</span>
+                  <label class="dropzone" for="id_archive" id="dropzone">
+                    <div class="dropzone__icon">+</div>
+                    <div class="dropzone__text" id="dropzone-text">Drop a .zip package here</div>
+                    <div class="dropzone__action">or click to browse from your machine</div>
+                    <input id="id_archive" name="archive" type="file" accept=".zip" class="file-input__native">
+                  </label>
                 </div>
+              </div>
 
-                <form id="analysis-form" class="submission-form" enctype="multipart/form-data">
-                    {% csrf_token %}
+              <div id="source-git-fields" style="display:none">
+                <label class="field">
+                  <span>Repository URL</span>
+                  <input id="id_repository_url" name="repository_url" type="text" placeholder="https://github.com/acme/platform">
+                </label>
+              </div>
 
-                    <div class="source-toggle">
-                        <button type="button" class="source-toggle__btn is-active"
-                            id="source-toggle-zip" onclick="setSource('zip')">
-                            ↑ Archivo ZIP
-                        </button>
-                        <button type="button" class="source-toggle__btn"
-                            id="source-toggle-git" onclick="setSource('git')">
-                            ⎇ Git URL
-                        </button>
+              <div class="field">
+                <span>Generation profile</span>
+                <div class="profile-segment" id="profile-segment">
+                  <button type="button" class="profile-segment__btn is-active" data-value="production" onclick="setProfile('production', this)">Production</button>
+                  <button type="button" class="profile-segment__btn" data-value="development" onclick="setProfile('development', this)">Development</button>
+                  <button type="button" class="profile-segment__btn" data-value="ci" onclick="setProfile('ci', this)">CI</button>
+                </div>
+                <input type="hidden" id="id_generation_profile" name="generation_profile" value="production">
+              </div>
+
+              <button id="analysis-submit-button" type="submit" class="primary-button">
+                <span id="analysis-submit-spinner" class="button-spinner" aria-hidden="true"></span>
+                <span id="analysis-submit-label">Analyze project</span>
+              </button>
+            </form>
+          </section>
+
+          <section id="analysis-result" class="panel run-detail is-empty">
+            <div class="run-header">
+              <div>
+                <p class="section-kicker">Run detail</p>
+                <h2 id="result-title">No active run selected</h2>
+                <p id="result-subtitle" class="empty-copy" style="margin-top: 8px;">Run a new analysis or load one from history to inspect artifacts, validation, and delivery actions.</p>
+              </div>
+
+              <div class="result-actions">
+                <label class="inline-field">
+                  <span>Profile</span>
+                  <select id="result-generation-profile">
+                    <option value="production">Production</option>
+                    <option value="development">Development</option>
+                    <option value="ci">CI</option>
+                  </select>
+                </label>
+                <button id="regenerate-button" class="secondary-button" type="button" disabled>Regenerate</button>
+                <button id="validate-button" class="secondary-button" type="button" disabled>Validate build</button>
+                <button id="diff-button" class="secondary-button" type="button" disabled>Compare diff</button>
+                {% if preview_runtime_capability.enabled %}
+                  <button id="preview-button" class="secondary-button" type="button" disabled>Launch preview</button>
+                  <button id="stop-preview-button" class="secondary-button" type="button" disabled>Stop preview</button>
+                {% endif %}
+                <a id="download-button" class="secondary-button is-disabled" href="#" aria-disabled="true">Download ZIP</a>
+              </div>
+            </div>
+
+            <nav class="run-tabs" aria-label="Run detail sections">
+              <button type="button" class="run-tab is-active" data-run-tab="summary">Summary</button>
+              <button type="button" class="run-tab" data-run-tab="artifacts">Artifacts</button>
+              <button type="button" class="run-tab" data-run-tab="delivery">Delivery</button>
+              <button type="button" class="run-tab" data-run-tab="workspace">Workspace</button>
+            </nav>
+
+            <section class="run-panel" data-run-panel="summary">
+              <div id="summary-grid" class="summary-grid"></div>
+              <div id="recommendations" class="recommendations"></div>
+
+              <div class="ops-grid ops-grid--expansion">
+                <section class="ops-card ops-card--scanner">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Security</p>
+                      <h3>Scanner summary</h3>
                     </div>
+                    <div class="ops-card__phase-num">S</div>
+                  </div>
+                  <p id="security-summary" class="empty-copy">There are no security findings yet.</p>
+                  <div id="security-findings" class="diff-results">
+                    <p class="empty-copy">The scanner runs automatically when an analysis finishes.</p>
+                  </div>
+                </section>
 
-                    <label class="field">
-                        <span>Nombre opcional</span>
-                        <input id="id_project_name" name="project_name" type="text"
-                            placeholder="Mi API, monorepo-platform, fastapi-service">
-                    </label>
-
-                    <div id="source-zip-fields">
-                        <div class="field">
-                            <span>Archivo ZIP</span>
-                            <label class="dropzone" for="id_archive" id="dropzone">
-                                <div class="dropzone__icon">↑</div>
-                                <div class="dropzone__text" id="dropzone-text">Arrastrá tu .zip acá</div>
-                                <div class="dropzone__action">o hacé click para seleccionar</div>
-                                <input id="id_archive" name="archive" type="file"
-                                    accept=".zip" class="file-input__native">
-                            </label>
-                        </div>
+                <section class="ops-card ops-card--runtime">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Runtime</p>
+                      <h3>Healthchecks</h3>
                     </div>
+                    <div class="ops-card__phase-num">H</div>
+                  </div>
+                  <p id="healthcheck-summary" class="empty-copy">No healthchecks generated yet.</p>
+                  <pre id="healthcheck-details" class="log-view">Healthcheck details will appear once the analysis detects portable runtime commands.</pre>
+                </section>
 
-                    <div id="source-git-fields" style="display:none">
-                        <label class="field">
-                            <span>Repositorio Git</span>
-                            <input id="id_repository_url" name="repository_url" type="text"
-                                placeholder="https://github.com/acme/platform">
-                        </label>
+                <section class="ops-card ops-card--pipeline">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Pipeline</p>
+                      <h3>CI/CD</h3>
                     </div>
+                    <div class="ops-card__phase-num">C</div>
+                  </div>
+                  <p id="cicd-summary" class="empty-copy">No CI/CD pipeline generated yet.</p>
+                  <div id="cicd-artifacts" class="preview-links"></div>
+                </section>
 
-                    <div class="field">
-                        <span>Perfil de generación</span>
-                        <div class="profile-segment" id="profile-segment">
-                            <button type="button" class="profile-segment__btn is-active"
-                                data-value="production" onclick="setProfile('production', this)">Producción</button>
-                            <button type="button" class="profile-segment__btn"
-                                data-value="development" onclick="setProfile('development', this)">Desarrollo</button>
-                            <button type="button" class="profile-segment__btn"
-                                data-value="ci" onclick="setProfile('ci', this)">CI</button>
-                        </div>
-                        <input type="hidden" id="id_generation_profile"
-                            name="generation_profile" value="production">
+                <section class="ops-card ops-card--deploy">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Deploy</p>
+                      <h3>Targets</h3>
                     </div>
+                    <div class="ops-card__phase-num">D</div>
+                  </div>
+                  <p id="deploy-summary" class="empty-copy">No deployment targets generated yet.</p>
+                  <div id="deploy-targets" class="preview-links"></div>
+                </section>
 
-                    <button id="analysis-submit-button" type="submit" class="primary-button">
-                        <span id="analysis-submit-spinner" class="button-spinner" aria-hidden="true"></span>
-                        <span id="analysis-submit-label">Analizar proyecto →</span>
-                    </button>
-                </form>
-
-                <ul class="feature-list">
-                    <li>Cola de análisis para no bloquear requests.</li>
-                    <li>Detección de workspaces, pnpm-workspace.yaml, turbo.json y stacks fullstack simples.</li>
-                    <li>Edición de artefactos con Monaco antes de exportar.</li>
-                </ul>
+                <section class="ops-card">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Profile</p>
+                      <h3>Generation assumptions</h3>
+                    </div>
+                    <div class="ops-card__phase-num">P</div>
+                  </div>
+                  <p id="profile-summary" class="empty-copy">There is no active generation profile yet.</p>
+                  <pre id="profile-details" class="log-view">Select a run to compare how output changes across development, production, and CI profiles.</pre>
+                </section>
+              </div>
             </section>
 
-            <!-- ── RESULT PANEL ── -->
-            <section id="analysis-result" class="panel result-panel is-empty">
-                <div class="section-head section-head--result">
+            <section class="run-panel" data-run-panel="artifacts" hidden>
+              <div class="editor-shell">
+                <div id="artifact-tabs" class="artifact-tabs"></div>
+                <div id="artifact-editors" class="artifact-editors">
+                  <p class="empty-copy">Run a project analysis or open a previous run to inspect generated artifacts.</p>
+                </div>
+              </div>
+
+              <section class="ops-card">
+                <div class="ops-card__head">
+                  <div>
+                    <p class="section-kicker">Diff</p>
+                    <h3>Repository comparison</h3>
+                  </div>
+                  <div class="ops-card__phase-num">2</div>
+                </div>
+                <div id="diff-results" class="diff-results">
+                  <p class="empty-copy">No diff has been generated against the source repository yet.</p>
+                </div>
+              </section>
+            </section>
+
+            <section class="run-panel" data-run-panel="delivery" hidden>
+              <div class="ops-grid">
+                <section class="ops-card">
+                  <div class="ops-card__head">
                     <div>
-                        <p class="eyebrow">Resultado</p>
-                        <h2 id="result-title">Todavía no hay una generación activa</h2>
-                        <p id="result-subtitle" class="empty-copy">Subí un proyecto o cargá un análisis del historial.</p>
+                      <p class="section-kicker">Validation</p>
+                      <h3>Build verification</h3>
                     </div>
-                    <div class="result-actions">
-                        <label class="inline-field">
-                            <span>Perfil</span>
-                            <select id="result-generation-profile">
-                                <option value="production">Producción</option>
-                                <option value="development">Desarrollo</option>
-                                <option value="ci">CI</option>
-                            </select>
-                        </label>
-                        <button id="regenerate-button" class="secondary-button" type="button" disabled>Regenerar</button>
-                        <button id="validate-button" class="secondary-button" type="button" disabled>Validar build</button>
-                        <button id="diff-button" class="secondary-button" type="button" disabled>Ver diff</button>
-                        {% if preview_runtime_capability.enabled %}
-                            <button id="preview-button" class="secondary-button" type="button" disabled>Preview</button>
-                            <button id="stop-preview-button" class="secondary-button" type="button" disabled>Detener preview</button>
-                        {% endif %}
-                        <a id="download-button" class="secondary-button is-disabled" href="#" aria-disabled="true">Descargar ZIP</a>
-                    </div>
-                </div>
+                    <div class="ops-card__phase-num">1</div>
+                  </div>
+                  <p id="validation-summary" class="empty-copy">No validation has been executed.</p>
+                  <pre id="validation-logs" class="log-view">Validation logs will appear here.</pre>
+                </section>
 
-                <div id="summary-grid" class="summary-grid"></div>
-                <div id="recommendations" class="recommendations"></div>
-
-                <!-- Expansion cards: Scanner / Runtime / Pipeline / Deploy -->
-                <div class="ops-grid ops-grid--expansion" style="margin-top:18px;">
-                    <section class="ops-card ops-card--scanner">
-                        <div class="ops-card__head">
-                            <div>
-                                <p class="eyebrow">Scanner</p>
-                                <h3>Seguridad</h3>
-                            </div>
-                            <div class="ops-card__phase-num">S</div>
-                        </div>
-                        <p id="security-summary" class="empty-copy">Todavía no hay resultados de seguridad.</p>
-                        <div id="security-findings" class="diff-results">
-                            <p class="empty-copy">El scanner corre automáticamente al finalizar cada análisis.</p>
-                        </div>
-                    </section>
-
-                    <section class="ops-card ops-card--runtime">
-                        <div class="ops-card__head">
-                            <div>
-                                <p class="eyebrow">Runtime</p>
-                                <h3>Healthchecks</h3>
-                            </div>
-                            <div class="ops-card__phase-num">H</div>
-                        </div>
-                        <p id="healthcheck-summary" class="empty-copy">Todavía no hay healthchecks calculados.</p>
-                        <pre id="healthcheck-details" class="log-view">Los healthchecks automáticos se mostrarán cuando el análisis detecte comandos portables para el runtime.</pre>
-                    </section>
-
-                    <section class="ops-card ops-card--pipeline">
-                        <div class="ops-card__head">
-                            <div>
-                                <p class="eyebrow">Pipeline</p>
-                                <h3>CI/CD</h3>
-                            </div>
-                            <div class="ops-card__phase-num">C</div>
-                        </div>
-                        <p id="cicd-summary" class="empty-copy">Todavía no hay pipeline generado.</p>
-                        <div id="cicd-artifacts" class="preview-links"></div>
-                    </section>
-
-                    <section class="ops-card ops-card--deploy">
-                        <div class="ops-card__head">
-                            <div>
-                                <p class="eyebrow">Deploy</p>
-                                <h3>Targets</h3>
-                            </div>
-                            <div class="ops-card__phase-num">D</div>
-                        </div>
-                        <p id="deploy-summary" class="empty-copy">Todavía no hay targets de deploy generados.</p>
-                        <div id="deploy-targets" class="preview-links"></div>
-                    </section>
-                </div>
-
-                <!-- Monaco Editor Shell -->
-                <div class="editor-shell">
-                    <div id="artifact-tabs" class="artifact-tabs"></div>
-                    <div id="artifact-editors" class="artifact-editors">
-                        <p class="empty-copy">Subí un proyecto o cargá un análisis del historial para editar los artefactos generados.</p>
-                    </div>
-                </div>
-
-                <!-- Phases block -->
-                <div class="phases-block">
-                    <div class="section-head section-head--phases">
-                        <div>
-                            <p class="eyebrow">Fases</p>
-                            <h3>Workflow operativo</h3>
-                        </div>
-                    </div>
-
-                    <div class="ops-grid">
-                        <section class="ops-card">
-                            <div class="ops-card__head">
-                                <div>
-                                    <p class="eyebrow">Fase 1</p>
-                                    <h3>Validación real</h3>
-                                </div>
-                                <div class="ops-card__phase-num">1</div>
-                            </div>
-                            <p id="validation-summary" class="empty-copy">No ejecutada.</p>
-                            <pre id="validation-logs" class="log-view">Todavía no hay logs de validación.</pre>
-                        </section>
-
-                        <section class="ops-card">
-                            <div class="ops-card__head">
-                                <div>
-                                    <p class="eyebrow">Fase 2</p>
-                                    <h3>Diff contra el repo</h3>
-                                </div>
-                                <div class="ops-card__phase-num">2</div>
-                            </div>
-                            <div id="diff-results" class="diff-results">
-                                <p class="empty-copy">Todavía no se compararon artefactos generados contra archivos existentes en el repo.</p>
-                            </div>
-                        </section>
-
-                        <section class="ops-card">
-                            <div class="ops-card__head">
-                                <div>
-                                    <p class="eyebrow">Fase 3</p>
-                                    <h3>Perfil dev / prod</h3>
-                                </div>
-                                <div class="ops-card__phase-num">3</div>
-                            </div>
-                            <p id="profile-summary" class="empty-copy">Todavía no hay un perfil activo cargado.</p>
-                            <pre id="profile-details" class="log-view">Seleccioná un análisis para ver cómo cambia la generación entre desarrollo y producción.</pre>
-                        </section>
-
-                        <section class="ops-card">
-                            <div class="ops-card__head">
-                                <div>
-                                    <p class="eyebrow">Fase 4</p>
-                                    <h3>PR automático en GitHub</h3>
-                                </div>
-                                <div class="ops-card__phase-num">4</div>
-                            </div>
-                            <form id="github-pr-form" class="stack-form">
-                                <label>
-                                    <span>Conexión guardada</span>
-                                    <select id="github-connection-select">
-                                        <option value="">Usar token manual</option>
-                                    </select>
-                                </label>
-                                <label>
-                                    <span>Access token</span>
-                                    <input id="github-access-token" type="password" placeholder="ghp_xxx o github_pat_xxx">
-                                </label>
-                                <label class="checkbox-field">
-                                    <span>Guardar token como conexión</span>
-                                    <input id="github-save-connection" type="checkbox">
-                                </label>
-                                <label>
-                                    <span>Etiqueta de conexión</span>
-                                    <input id="github-connection-label" type="text" placeholder="GitHub personal">
-                                </label>
-                                <label>
-                                    <span>Cuenta / bot</span>
-                                    <input id="github-account-name" type="text" placeholder="lucas o AutoDocker Bot">
-                                </label>
-                                <label>
-                                    <span>Base branch</span>
-                                    <input id="github-base-branch" type="text" value="main">
-                                </label>
-                                <label>
-                                    <span>Título del PR</span>
-                                    <input id="github-pr-title" type="text" placeholder="Dockerize project">
-                                </label>
-                                <label>
-                                    <span>Cuerpo del PR</span>
-                                    <textarea id="github-pr-body" rows="4"
-                                        placeholder="Auto-generated Docker configuration from AutoDocker."></textarea>
-                                </label>
-                                <button id="github-pr-button" type="submit"
-                                    class="secondary-button secondary-button--full" disabled>Crear PR</button>
-                            </form>
-                            <p id="github-summary" class="empty-copy">No se creó ningún PR todavía.</p>
-                            <pre id="github-logs" class="log-view">Todavía no hay logs de GitHub.</pre>
-                        </section>
-
-                        {% if preview_runtime_capability.enabled %}
-                            <section class="ops-card">
-                                <div class="ops-card__head">
-                                    <div>
-                                        <p class="eyebrow">Fase 5</p>
-                                        <h3>Preview ejecutable</h3>
-                                    </div>
-                                    <div class="ops-card__phase-num">5</div>
-                                </div>
-                                <p id="preview-summary" class="empty-copy">No hay preview activa.</p>
-                                <div id="preview-links" class="preview-links"></div>
-                                <pre id="preview-logs" class="log-view">Todavía no hay logs de preview.</pre>
-                            </section>
-                        {% endif %}
-                    </div>
-                </div><!-- /phases-block -->
-            </section><!-- /result-panel -->
-        </div><!-- /workspace-left -->
-
-        <!-- ── SIDEBAR ── -->
-        <aside class="workspace-right">
-
-            <!-- Workspaces -->
-            <section class="panel history-panel history-panel--feed">
-                <div class="section-head">
+                <section class="ops-card">
+                  <div class="ops-card__head">
                     <div>
-                        <p class="eyebrow">Workspaces</p>
-                        <h2>Colaboración</h2>
+                      <p class="section-kicker">GitHub</p>
+                      <h3>Automatic pull request</h3>
                     </div>
-                </div>
-                <p id="workspace-summary" class="empty-copy">
+                    <div class="ops-card__phase-num">4</div>
+                  </div>
+                  <form id="github-pr-form" class="stack-form">
+                    <label>
+                      <span>Saved connection</span>
+                      <select id="github-connection-select">
+                        <option value="">Use manual token</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Access token</span>
+                      <input id="github-access-token" type="password" placeholder="ghp_xxx or github_pat_xxx">
+                    </label>
+                    <label class="checkbox-field">
+                      <span>Save token as a connection</span>
+                      <input id="github-save-connection" type="checkbox">
+                    </label>
+                    <label>
+                      <span>Connection label</span>
+                      <input id="github-connection-label" type="text" placeholder="Personal GitHub">
+                    </label>
+                    <label>
+                      <span>Account or bot name</span>
+                      <input id="github-account-name" type="text" placeholder="lucas or AutoDocker Bot">
+                    </label>
+                    <label>
+                      <span>Base branch</span>
+                      <input id="github-base-branch" type="text" value="main">
+                    </label>
+                    <label>
+                      <span>Pull request title</span>
+                      <input id="github-pr-title" type="text" placeholder="Dockerize project">
+                    </label>
+                    <label>
+                      <span>Pull request body</span>
+                      <textarea id="github-pr-body" rows="4" placeholder="Auto-generated Docker configuration from AutoDocker."></textarea>
+                    </label>
+                    <button id="github-pr-button" type="submit" class="secondary-button secondary-button--full" disabled>Create pull request</button>
+                  </form>
+                  <p id="github-summary" class="empty-copy">No GitHub delivery has been triggered yet.</p>
+                  <pre id="github-logs" class="log-view">GitHub execution logs will appear here.</pre>
+                </section>
+
+                {% if preview_runtime_capability.enabled %}
+                  <section class="ops-card">
+                    <div class="ops-card__head">
+                      <div>
+                        <p class="section-kicker">Preview</p>
+                        <h3>Executable environment</h3>
+                      </div>
+                      <div class="ops-card__phase-num">5</div>
+                    </div>
+                    <p id="preview-summary" class="empty-copy">No preview is running.</p>
+                    <div id="preview-links" class="preview-links"></div>
+                    <pre id="preview-logs" class="log-view">Preview logs will appear here.</pre>
+                  </section>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="run-panel" data-run-panel="workspace" hidden>
+              <div class="ops-grid">
+                <section class="ops-card">
+                  <div class="ops-card__head">
+                    <div>
+                      <p class="section-kicker">Workspace</p>
+                      <h3>Collaborators</h3>
+                    </div>
+                    <div class="ops-card__phase-num">W</div>
+                  </div>
+                  <p id="workspace-summary" class="empty-copy">
                     {% if active_workspace %}
-                        Workspace activo: <strong>{{ active_workspace.name }}</strong>
+                      Active workspace: <strong>{{ active_workspace.name }}</strong>
                     {% else %}
-                        Todavía no hay un workspace activo.
+                      There is no active workspace yet.
                     {% endif %}
-                </p>
-                <form id="workspace-form" class="stack-form" style="margin-top:16px;">
+                  </p>
+                  <form id="workspace-form" class="stack-form" style="margin-top: 16px;">
                     <label>
-                        <span>Nuevo workspace</span>
-                        <input id="workspace-name" type="text" placeholder="Equipo plataforma">
+                      <span>New workspace</span>
+                      <input id="workspace-name" type="text" placeholder="Platform team">
                     </label>
                     <label>
-                        <span>Descripción</span>
-                        <input id="workspace-description" type="text" placeholder="Dockerización compartida">
+                      <span>Description</span>
+                      <input id="workspace-description" type="text" placeholder="Shared dockerization workflow">
                     </label>
-                    <button id="workspace-create-button" type="submit"
-                        class="secondary-button secondary-button--full">Crear workspace</button>
-                </form>
-                <form id="workspace-member-form" class="stack-form" style="margin-top:14px;">
+                    <button id="workspace-create-button" type="submit" class="secondary-button secondary-button--full">Create workspace</button>
+                  </form>
+                  <form id="workspace-member-form" class="stack-form" style="margin-top: 14px;">
                     <label>
-                        <span>Invitar por username o email</span>
-                        <input id="workspace-member-username" type="text" placeholder="username existente o email">
+                      <span>Invite by username or email</span>
+                      <input id="workspace-member-username" type="text" placeholder="username or email">
                     </label>
                     <label>
-                        <span>Rol</span>
-                        <select id="workspace-member-role">
-                            <option value="viewer">Viewer</option>
-                            <option value="editor">Editor</option>
-                        </select>
+                      <span>Role</span>
+                      <select id="workspace-member-role">
+                        <option value="viewer">Viewer</option>
+                        <option value="editor">Editor</option>
+                      </select>
                     </label>
-                    <button id="workspace-member-button" type="submit"
-                        class="secondary-button secondary-button--full">Enviar invitación</button>
-                </form>
-                <div class="subsection-head" style="margin-top:18px;">Invitaciones pendientes</div>
-                <div id="workspace-invitations" class="history-list" style="margin-top:8px;">
-                    <p class="empty-copy">Todavía no hay invitaciones pendientes en este workspace.</p>
-                </div>
-                <div class="subsection-head" style="margin-top:14px;">Miembros activos</div>
-                <div id="workspace-members" class="history-list" style="margin-top:8px;"></div>
-            </section>
+                    <button id="workspace-member-button" type="submit" class="secondary-button secondary-button--full">Send invitation</button>
+                  </form>
+                  <div class="subsection-head" style="margin-top: 18px;">Pending invitations</div>
+                  <div id="workspace-invitations" class="history-list" style="margin-top: 10px;">
+                    <p class="empty-copy">There are no pending invitations in this workspace yet.</p>
+                  </div>
+                  <div class="subsection-head" style="margin-top: 18px;">Members</div>
+                  <div id="workspace-members" class="history-list" style="margin-top: 10px;"></div>
+                </section>
 
-            <!-- Invitaciones recibidas -->
-            <section class="panel history-panel">
-                <div class="section-head">
+                <section class="ops-card">
+                  <div class="ops-card__head">
                     <div>
-                        <p class="eyebrow">Invitaciones</p>
-                        <h2>Para vos</h2>
+                      <p class="section-kicker">Incoming</p>
+                      <h3>Invitations for you</h3>
                     </div>
-                </div>
-                <p id="incoming-invitations-summary" class="empty-copy">No tenés invitaciones pendientes.</p>
-                <div id="incoming-invitations" class="history-list" style="margin-top:12px;">
-                    <p class="empty-copy">Cuando otro usuario te invite a un workspace, lo vas a poder aceptar o rechazar desde acá.</p>
-                </div>
+                    <div class="ops-card__phase-num">I</div>
+                  </div>
+                  <p id="incoming-invitations-summary" class="empty-copy">You do not have pending invitations.</p>
+                  <div id="incoming-invitations" class="history-list" style="margin-top: 12px;">
+                    <p class="empty-copy">Incoming workspace invitations will appear here.</p>
+                  </div>
+                </section>
+              </div>
             </section>
+          </section>
+        </div>
 
-            <!-- Historial -->
-            <section class="panel history-panel">
-                <div class="section-head">
-                    <div>
-                        <p class="eyebrow">Historial</p>
-                        <h2>Generaciones recientes</h2>
-                    </div>
-                </div>
-                <div id="history-list" class="history-list">
-                    {% for analysis in recent_analyses %}
-                        <button type="button" class="history-item" data-analysis-id="{{ analysis.id }}">
-                            <span class="history-item__dot
-                                {% if analysis.status == 'ready' %}history-item__dot--ok
-                                {% elif analysis.status == 'failed' %}history-item__dot--error
-                                {% elif analysis.status == 'analyzing' or analysis.status == 'queued' %}history-item__dot--running
-                                {% endif %}"></span>
-                            <span class="history-item__body">
-                                <span class="history-item__title">{{ analysis.project_name }}</span>
-                                <span class="history-item__meta">{{ analysis.detected_framework|default:"Sin clasificar" }}</span>
-                            </span>
-                            <span class="history-item__badge
-                                {% if analysis.status == 'ready' %}history-item__badge--ok
-                                {% elif analysis.status == 'failed' %}history-item__badge--error
-                                {% else %}history-item__badge--running
-                                {% endif %}">{{ analysis.get_status_display }}</span>
-                        </button>
-                    {% empty %}
-                        <p class="empty-copy">Todavía no hay ejecuciones guardadas.</p>
-                    {% endfor %}
-                </div>
-                <button id="history-more-button" type="button"
-                    class="secondary-button secondary-button--full" hidden style="display:none;margin-top:10px;">Ver más</button>
-                <div id="history-pagination" class="history-pagination" hidden style="display:none">
-                    <button id="history-prev-button" type="button" class="secondary-button">Anterior</button>
-                    <span id="history-page-info" class="empty-copy">Página 1 de 1</span>
-                    <button id="history-next-button" type="button" class="secondary-button">Siguiente</button>
-                </div>
-            </section>
+        <aside class="workspace-right" style="display: grid; gap: 20px; align-self: start;">
+          <section class="panel history-panel">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Recent activity</p>
+                <h2 style="margin-top: 8px; font-family: var(--font-heading); font-size: 24px; letter-spacing: -0.04em;">Saved runs</h2>
+              </div>
+            </div>
 
+            <div id="history-list" class="history-list">
+              {% for analysis in recent_analyses %}
+                <button type="button" class="history-item" data-analysis-id="{{ analysis.id }}">
+                  <span class="history-item__dot
+                    {% if analysis.status == 'ready' %}history-item__dot--ok
+                    {% elif analysis.status == 'failed' %}history-item__dot--error
+                    {% elif analysis.status == 'analyzing' or analysis.status == 'queued' %}history-item__dot--running
+                    {% endif %}"></span>
+                  <span class="history-item__body">
+                    <span class="history-item__title">{{ analysis.project_name }}</span>
+                    <span class="history-item__meta">{{ analysis.detected_framework|default:"Unclassified stack" }}</span>
+                  </span>
+                  <span class="history-item__badge
+                    {% if analysis.status == 'ready' %}history-item__badge--ok
+                    {% elif analysis.status == 'failed' %}history-item__badge--error
+                    {% else %}history-item__badge--running
+                    {% endif %}">{{ analysis.get_status_display }}</span>
+                </button>
+              {% empty %}
+                <p class="empty-copy">There are no saved runs yet.</p>
+              {% endfor %}
+            </div>
+
+            <button id="history-more-button" type="button" class="secondary-button secondary-button--full history-more-button" hidden style="margin-top: 12px;">Show more</button>
+            <div id="history-pagination" class="history-pagination" hidden style="margin-top: 12px;">
+              <button id="history-prev-button" type="button" class="secondary-button">Previous</button>
+              <span id="history-page-info" class="empty-copy">Page 1 of 1</span>
+              <button id="history-next-button" type="button" class="secondary-button">Next</button>
+            </div>
+          </section>
         </aside>
-    </section><!-- /workspace -->
+      </div>
+    </div>
+  </section>
 </main>
 
 {{ dashboard_bootstrap|json_script:"dashboard-bootstrap" }}
+{% endblock %}
+
+{% block extra_scripts %}
 <script src="{% static 'core/js/app_helpers.js' %}"></script>
 <script src="{% static 'core/js/dashboard_form.js' %}"></script>
 <script src="{% static 'core/js/dashboard_collections.js' %}"></script>
 <script src="{% static 'core/js/app.js' %}"></script>
-</body>
-</html>
+{% endblock %}

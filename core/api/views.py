@@ -131,8 +131,8 @@ class AnalysisListCreateApiView(AuthenticatedApiView):
             return Response(
                 {
                     "detail": (
-                        "No se pudo guardar el archivo subido. "
-                        "Revisá la configuración del storage de media o del volumen local."
+                        "The uploaded archive could not be saved. "
+                        "Check the media storage configuration or local volume setup."
                     )
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -156,11 +156,11 @@ class ArtifactDetailApiView(AuthenticatedApiView):
             pk=artifact_id,
         )
         if not self.user_can_mutate_analysis(artifact.analysis):
-            return Response({"detail": "No tenés permisos para editar este artefacto."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to edit this artifact."}, status=status.HTTP_403_FORBIDDEN)
         content = request.data.get("content")
         if not isinstance(content, str):
             return Response(
-                {"content": ["Se requiere contenido editable."]},
+                {"content": ["Editable content is required."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         artifact.content = content
@@ -181,7 +181,7 @@ class AnalysisRegenerateApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
-            return Response({"detail": "No tenés permisos para regenerar este análisis."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to regenerate this analysis."}, status=status.HTTP_403_FORBIDDEN)
         generation_profile = request.data.get("generation_profile")
         if generation_profile in {
             ProjectAnalysis.GenerationProfile.DEVELOPMENT,
@@ -227,7 +227,7 @@ class AnalysisValidateApiView(AuthenticatedApiView):
             )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
-            return Response({"detail": "No tenés permisos para validar este análisis."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to validate this analysis."}, status=status.HTTP_403_FORBIDDEN)
         job = ExecutionJob.objects.create(
             owner=request.user,
             analysis=analysis,
@@ -243,7 +243,7 @@ class AnalysisGitHubPrApiView(AuthenticatedApiView):
     def post(self, request, analysis_id):
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
-            return Response({"detail": "No tenés permisos para abrir PRs desde este análisis."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to open pull requests from this analysis."}, status=status.HTTP_403_FORBIDDEN)
         connection_id = request.data.get("connection_id")
         access_token = (request.data.get("access_token") or "").strip()
         save_connection = str(request.data.get("save_connection", "")).lower() in {"1", "true", "yes", "on"}
@@ -252,7 +252,7 @@ class AnalysisGitHubPrApiView(AuthenticatedApiView):
 
         if not connection_id and not access_token:
             return Response(
-                {"detail": "Se requiere una conexión guardada o un token de GitHub."},
+                {"detail": "A saved connection or GitHub token is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -294,7 +294,7 @@ class AnalysisPreviewApiView(AuthenticatedApiView):
             )
         analysis = get_object_or_404(self.get_analysis_queryset(), pk=analysis_id)
         if not self.user_can_mutate_analysis(analysis):
-            return Response({"detail": "No tenés permisos para ejecutar previews en este análisis."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to run previews for this analysis."}, status=status.HTTP_403_FORBIDDEN)
         active_preview = analysis.preview_runs.filter(
             status__in=(
                 PreviewRun.Status.QUEUED,
@@ -321,7 +321,7 @@ class PreviewStopApiView(AuthenticatedApiView):
         preview = get_object_or_404(self.get_preview_queryset(), pk=preview_id)
         if not self.user_can_mutate_analysis(preview.analysis):
             return Response(
-                {"detail": "No tenés permisos para detener esta preview."},
+                {"detail": "You do not have permission to stop this preview."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         PreviewService().stop(preview)
@@ -347,7 +347,7 @@ class RepoConnectionListCreateApiView(AuthenticatedApiView):
         label = (request.data.get("label") or "").strip()
         if not access_token or not label:
             return Response(
-                {"detail": "Se requieren `label` y `access_token` para guardar la conexión."},
+                {"detail": "`label` and `access_token` are required to save a connection."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         connection = ExternalRepoConnection.objects.create(
@@ -375,7 +375,7 @@ class WorkspaceListCreateApiView(AuthenticatedApiView):
     def post(self, request):
         name = (request.data.get("name") or "").strip()
         if not name:
-            return Response({"detail": "Se requiere un nombre para crear el workspace."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "A workspace name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         description = (request.data.get("description") or "").strip()
         visibility = request.data.get("visibility") or Workspace.Visibility.TEAM
@@ -410,7 +410,7 @@ class WorkspaceMemberCreateApiView(AuthenticatedApiView):
     def post(self, request, workspace_id):
         workspace = get_object_or_404(self.get_workspace_queryset(), pk=workspace_id)
         if not user_can_manage_workspace(request.user, workspace):
-            return Response({"detail": "No tenés permisos para administrar este workspace."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to manage this workspace."}, status=status.HTTP_403_FORBIDDEN)
 
         identifier = (
             request.data.get("identifier")
@@ -422,11 +422,11 @@ class WorkspaceMemberCreateApiView(AuthenticatedApiView):
         valid_roles = {choice for choice, _label in WorkspaceMembership.Role.choices}
         if not identifier:
             return Response(
-                {"detail": "Se requiere un username o email para invitar al workspace."},
+                {"detail": "A username or email is required to invite someone to the workspace."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if role not in valid_roles:
-            return Response({"detail": "Rol inválido para el workspace."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Invalid role for this workspace."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             invitation = invite_workspace_member(
@@ -445,11 +445,11 @@ class WorkspaceMemberDetailApiView(AuthenticatedApiView):
     def delete(self, request, workspace_id, membership_id):
         workspace = get_object_or_404(self.get_workspace_queryset(), pk=workspace_id)
         if not user_can_manage_workspace(request.user, workspace):
-            return Response({"detail": "No tenés permisos para administrar este workspace."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You do not have permission to manage this workspace."}, status=status.HTTP_403_FORBIDDEN)
 
         membership = get_object_or_404(workspace.memberships.select_related("user"), pk=membership_id)
         if membership.role == WorkspaceMembership.Role.OWNER and membership.user_id == workspace.owner_id:
-            return Response({"detail": "No se puede remover al owner principal del workspace."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "The primary workspace owner cannot be removed."}, status=status.HTTP_400_BAD_REQUEST)
         membership.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

@@ -102,13 +102,13 @@ class DashboardAuthTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertFalse(payload["ok"])
-        self.assertIn("correctos", payload["detail"])
+        self.assertIn("Invalid", payload["detail"])
 
     def test_signup_page_renders(self):
         response = self.client.get(reverse("signup"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Crear cuenta")
-        self.assertContains(response, "Registro gratuito")
+        self.assertContains(response, "Create account")
+        self.assertContains(response, "Start your workspace")
 
     def test_signup_redirects_to_dashboard_and_logs_user_in(self):
         response = self.client.post(
@@ -200,8 +200,7 @@ class DashboardAuthTests(TestCase):
         self.assertNotContains(response, 'id="preview-button"')
         self.assertNotContains(response, 'id="stop-preview-button"')
         self.assertNotContains(response, 'id="preview-summary"')
-        self.assertNotContains(response, "preview ejecutable")
-        self.assertNotContains(response, "Preview → PR")
+        self.assertNotContains(response, "Executable environment")
 
     @override_settings(
         AUTODOCKER_PREVIEW_BACKEND="remote_runner",
@@ -221,8 +220,7 @@ class DashboardAuthTests(TestCase):
         self.assertContains(response, 'id="preview-button"')
         self.assertContains(response, 'id="stop-preview-button"')
         self.assertContains(response, 'id="preview-summary"')
-        self.assertContains(response, "preview ejecutable")
-        self.assertContains(response, "Preview → PR")
+        self.assertContains(response, "Executable environment")
 
     def test_dashboard_bootstraps_initial_collections_in_html(self):
         user = get_user_model().objects.create_user(
@@ -560,7 +558,7 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(
             response.json()["detail"],
-            "No se pudo guardar el archivo subido. Revisá la configuración del storage de media o del volumen local.",
+            "The uploaded archive could not be saved. Check the media storage configuration or local volume setup.",
         )
 
     def test_editing_artifact_creates_snapshot_version(self):

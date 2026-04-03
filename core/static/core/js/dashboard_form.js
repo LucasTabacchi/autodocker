@@ -44,7 +44,7 @@
     function setSubmitLoading(elements, isLoading) {
         elements.submitButton.classList.toggle("is-loading", isLoading);
         elements.submitButton.disabled = isLoading;
-        elements.submitLabel.textContent = isLoading ? "Analizando proyecto..." : "Analizar proyecto";
+        elements.submitLabel.textContent = isLoading ? "Analyzing project..." : "Analyze project";
     }
 
     function setArchiveLabel(elements, text) {
@@ -58,7 +58,7 @@
 
     function updateSelectedFilename(elements) {
         const file = elements.archiveInput.files && elements.archiveInput.files[0];
-        setArchiveLabel(elements, file ? file.name : "Arrastrá tu .zip acá");
+        setArchiveLabel(elements, file ? file.name : "Drop a .zip package here");
     }
 
     function resetSubmissionForm(form, elements) {

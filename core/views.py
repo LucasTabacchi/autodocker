@@ -135,11 +135,11 @@ class SignInView(View):
     def _form_error_message(self, form: AuthenticationForm) -> str:
         non_field = form.non_field_errors()
         if non_field:
-            return non_field[0]
+            return "Invalid username or password."
         for field in form.errors.values():
             if field:
                 return field[0]
-        return "Usuario o contraseña inválidos."
+        return "Invalid username or password."
 
 
 class SignUpView(FormView):

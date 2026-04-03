@@ -76,6 +76,10 @@
         deploySummary: byId("deploy-summary"),
         deployTargets: byId("deploy-targets"),
     };
+    const runTabButtons = Array.from(document.querySelectorAll("[data-run-tab]"));
+    const runPanels = Array.from(document.querySelectorAll("[data-run-panel]"));
+    const sidebarTabButtons = Array.from(document.querySelectorAll("[data-run-tab-target]"));
+    const workbenchButtons = Array.from(document.querySelectorAll("[data-workbench-target]"));
     const previewUiAvailable = Boolean(
         elements.preview &&
         elements.stopPreview &&
@@ -97,6 +101,7 @@
         workspaces: [],
         incomingInvitations: [],
         currentWorkspaceId: elements.workspaceSelect?.value || "",
+        activeRunTab: "summary",
         monacoPromise: null,
         monacoLoaderPromise: null,
         editors: new Map(),
@@ -123,8 +128,8 @@
                 .replaceAll(">", "&gt;")
                 .replaceAll('"', "&quot;"));
     const buildErrorMessage =
-        helpers.buildErrorMessage || ((error) => String(error || "Ocurrió un error inesperado."));
-    const labelStatus = helpers.labelStatus || ((status) => status || "Sin estado");
+        helpers.buildErrorMessage || ((error) => String(error || "An unexpected error occurred."));
+    const labelStatus = helpers.labelStatus || ((status) => status || "Unknown");
     const profileLabel = helpers.profileLabel || ((profile) => profile || "");
     const deliveryStatusLabel = helpers.deliveryStatusLabel || ((status) => status || "");
     const formHelpers = window.AutoDockerDashboardForm || {};
@@ -257,7 +262,34 @@
         elements.workspaceForm?.addEventListener("submit", createWorkspace);
         elements.workspaceMemberForm?.addEventListener("submit", addWorkspaceMember);
         elements.incomingInvitations?.addEventListener("click", onIncomingInvitationAction);
+        runTabButtons.forEach((button) => {
+            button.addEventListener("click", () => setActiveRunTab(button.dataset.runTab));
+        });
+        sidebarTabButtons.forEach((button) => {
+            button.addEventListener("click", () => setActiveRunTab(button.dataset.runTabTarget));
+        });
+        workbenchButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                document.getElementById(button.dataset.workbenchTarget)?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                });
+            });
+        });
         window.addEventListener("resize", onViewportResize);
+    }
+
+    function setActiveRunTab(tabId) {
+        state.activeRunTab = tabId || "summary";
+        runTabButtons.forEach((button) => {
+            button.classList.toggle("is-active", button.dataset.runTab === state.activeRunTab);
+        });
+        runPanels.forEach((panel) => {
+            panel.hidden = panel.dataset.runPanel !== state.activeRunTab;
+        });
+        sidebarTabButtons.forEach((button) => {
+            button.classList.toggle("is-active", button.dataset.runTabTarget === state.activeRunTab);
+        });
     }
 
     function getCsrfToken() {
@@ -307,7 +339,7 @@
     async function createAnalysis(event) {
         event.preventDefault();
         setSubmitLoading(true);
-        setStatusBadge("Encolando análisis…", "running");
+        setStatusBadge("Queuing analysis...", "running");
 
         try {
             const payload = new FormData(form);
@@ -318,11 +350,12 @@
                 method: "POST",
                 body: payload,
             });
+            setActiveRunTab("summary");
             renderAnalysis(analysis, {reveal: true});
             prependHistoryItem(analysis);
             resetSubmissionForm();
         } catch (error) {
-            setStatusBadge("Error en análisis", "error");
+            setStatusBadge("Analysis failed", "error");
             window.alert(buildErrorMessage(error));
         } finally {
             setSubmitLoading(false);
@@ -339,12 +372,13 @@
     }
 
     async function fetchAnalysis(analysisId) {
-        setStatusBadge("Cargando análisis…", "subtle");
+        setStatusBadge("Loading analysis...", "subtle");
         try {
             const analysis = await requestJson(`/api/analyses/${analysisId}/`);
+            setActiveRunTab("summary");
             renderAnalysis(analysis, {reveal: false});
         } catch (error) {
-            setStatusBadge("No se pudo cargar", "error");
+            setStatusBadge("Could not load run", "error");
             window.alert(buildErrorMessage(error));
         }
     }
@@ -375,7 +409,7 @@
             });
             saveButton.textContent = "Guardado";
             setTimeout(() => {
-                saveButton.textContent = "Guardar cambios";
+                saveButton.textContent = "Save changes";
                 saveButton.disabled = false;
             }, 900);
         } catch (error) {
@@ -389,7 +423,8 @@
             return;
         }
 
-        setStatusBadge("Regenerando artefactos…", "running");
+        setActiveRunTab("artifacts");
+        setStatusBadge("Regenerating artifacts...", "running");
         try {
             const analysis = await requestJson(`/api/analyses/${state.analysis.id}/regenerate/`, {
                 method: "POST",
@@ -400,9 +435,9 @@
             });
             renderAnalysis(analysis, {reveal: true});
             elements.diffResults.innerHTML =
-                '<p class="empty-copy">Regeneración en curso. Volvé a pedir el diff cuando termine.</p>';
+                '<p class="empty-copy">Regeneration is in progress. Request a repository comparison when the run finishes.</p>';
         } catch (error) {
-            setStatusBadge("Regeneración fallida", "error");
+            setStatusBadge("Regeneration failed", "error");
             window.alert(buildErrorMessage(error));
         }
     }
@@ -412,7 +447,8 @@
             return;
         }
 
-        elements.validationSummary.textContent = "Validación encolada…";
+        setActiveRunTab("delivery");
+        elements.validationSummary.textContent = "Validation queued...";
         try {
             const job = await requestJson(`/api/analyses/${state.analysis.id}/validate/`, {
                 method: "POST",
@@ -429,8 +465,9 @@
             return;
         }
 
+        setActiveRunTab("artifacts");
         elements.diffResults.innerHTML =
-            '<p class="empty-copy">Comparando artefactos generados contra el repo original…</p>';
+            '<p class="empty-copy">Comparing generated artifacts against the source repository...</p>';
         try {
             const payload = await requestJson(`/api/analyses/${state.analysis.id}/diff/`);
             renderDiff(payload.items || []);
@@ -447,7 +484,8 @@
         if (!previewUiAvailable) {
             return;
         }
-        elements.previewSummary.textContent = "Preparando preview…";
+        setActiveRunTab("delivery");
+        elements.previewSummary.textContent = "Preparing preview...";
         try {
             const preview = await requestJson(`/api/analyses/${state.analysis.id}/preview/`, {
                 method: "POST",
@@ -520,13 +558,13 @@
             const connections = await requestJson("/api/connections/");
             renderConnections(connections);
         } catch {
-            elements.githubSelect.innerHTML = '<option value="">No se pudieron cargar conexiones</option>';
+            elements.githubSelect.innerHTML = '<option value="">Connections could not be loaded</option>';
         }
     }
 
     function renderConnections(connections) {
         const options = [
-            '<option value="">Usar token manual</option>',
+            '<option value="">Use manual token</option>',
             ...(connections || []).map(
                 (connection) =>
                     `<option value="${connection.id}">${escapeHtml(connection.label)} · ${escapeHtml(connection.account_name || connection.provider)}</option>`,
@@ -562,8 +600,8 @@
         renderWorkspaceMembers(activeWorkspace);
         renderWorkspaceInvitations(activeWorkspace);
         elements.workspaceSummary.textContent = activeWorkspace
-            ? `Workspace activo: ${activeWorkspace.name} · ${activeWorkspace.member_count || 0} miembros`
-            : "Todavía no hay un workspace activo.";
+            ? `Active workspace: ${activeWorkspace.name} · ${activeWorkspace.member_count || 0} members`
+            : "There is no active workspace yet.";
         try {
             await refreshHistory();
         } catch (error) {
@@ -601,7 +639,7 @@
         event.preventDefault();
         const workspace = currentWorkspace();
         if (!workspace) {
-            window.alert("Seleccioná un workspace antes de agregar miembros.");
+            window.alert("Select a workspace before adding members.");
             return;
         }
 
@@ -697,7 +735,7 @@
 
         state.analysisSignature = signature;
         elements.panel.classList.remove("is-empty");
-        elements.title.textContent = `${analysis.project_name} · ${analysis.detected_framework || "Stack sin clasificar"}`;
+        elements.title.textContent = `${analysis.project_name} · ${analysis.detected_framework || "Unclassified stack"}`;
         elements.subtitle.textContent = buildSubtitle(analysis);
 
         const isReady = analysis.status === "ready";
@@ -718,7 +756,7 @@
         }
         elements.download.href = isReady ? analysis.download_url : "#";
         elements.download.classList.toggle("is-disabled", !isReady);
-        elements.validate.title = capabilityTitle(validationCapability, "Validar build");
+        elements.validate.title = capabilityTitle(validationCapability, "Validate build");
         if (previewUiAvailable) {
             elements.preview.title = capabilityTitle(previewCapability, "Preview");
         }
@@ -772,6 +810,7 @@
                 elements.panel.classList.add("is-revealed");
             });
         }
+        setActiveRunTab(state.activeRunTab);
     }
 
     function clearCurrentAnalysis() {
@@ -782,13 +821,13 @@
         state.activeArtifactId = null;
         disposeEditors();
         elements.panel.classList.add("is-empty");
-        elements.title.textContent = "Todavía no hay una generación activa";
-        elements.subtitle.textContent = "Subí un proyecto o cargá un análisis del historial.";
+        elements.title.textContent = "No active run selected";
+        elements.subtitle.textContent = "Run a new analysis or load one from history to inspect artifacts, validation, and delivery actions.";
         elements.summaryGrid.innerHTML = "";
         elements.recommendations.innerHTML = "";
         elements.tabs.innerHTML = "";
         elements.editors.innerHTML =
-            '<p class="empty-copy">Subí un proyecto o cargá un análisis del historial para editar los artefactos generados.</p>';
+            '<p class="empty-copy">Run a project analysis or open a previous run to inspect generated artifacts.</p>';
         elements.regenerate.disabled = true;
         elements.validate.disabled = true;
         elements.diff.disabled = true;
@@ -801,7 +840,7 @@
         }
         elements.download.href = "#";
         elements.download.classList.add("is-disabled");
-        elements.validate.title = "Validar build";
+        elements.validate.title = "Validate build";
         if (previewUiAvailable) {
             elements.preview.title = "Preview";
         }
@@ -816,17 +855,18 @@
         renderHealthchecks(null);
         renderCicd(null);
         renderDeploy(null);
-        setStatusBadge("Listo", "subtle");
+        setStatusBadge("Ready", "subtle");
+        setActiveRunTab("summary");
     }
 
     function renderSummaryCards(analysis, components) {
         const items = [
-            {label: "Stack detectado", value: analysis.detected_framework || "Pendiente"},
-            {label: "Confianza", value: analysis.confidence || "0.00"},
-            {label: "Root de ejecución", value: analysis.execution_root || "."},
-            {label: "Puertos", value: (analysis.probable_ports || []).join(", ") || "Sin puertos"},
-            {label: "Servicios", value: (analysis.services || []).join(", ") || "Sin auxiliares"},
-            {label: "Componentes", value: String(components.length || 0)},
+            {label: "Detected stack", value: analysis.detected_framework || "Pending"},
+            {label: "Confidence", value: analysis.confidence || "0.00"},
+            {label: "Execution root", value: analysis.execution_root || "."},
+            {label: "Ports", value: (analysis.probable_ports || []).join(", ") || "No ports"},
+            {label: "Services", value: (analysis.services || []).join(", ") || "No auxiliaries"},
+            {label: "Components", value: String(components.length || 0)},
         ];
 
         elements.summaryGrid.innerHTML = items
@@ -854,21 +894,21 @@
 
     function renderSecurityReport(report) {
         if (!report || (!report.summary && !(report.findings || []).length)) {
-            elements.securitySummary.textContent = "Todavía no hay resultados de seguridad.";
+            elements.securitySummary.textContent = "There are no security results yet.";
             elements.securityFindings.innerHTML =
-                '<p class="empty-copy">El scanner corre automáticamente al finalizar cada análisis.</p>';
+                '<p class="empty-copy">The scanner runs automatically when each analysis finishes.</p>';
             return;
         }
 
-        const summaryParts = [report.summary || "Scanner ejecutado."];
+        const summaryParts = [report.summary || "Scanner executed."];
         if (report.coverage) {
-            summaryParts.push(`Cobertura: ${report.coverage}`);
+            summaryParts.push(`Coverage: ${report.coverage}`);
         }
         elements.securitySummary.textContent = summaryParts.join(" · ");
         const findings = report.findings || [];
         if (!findings.length) {
             elements.securityFindings.innerHTML =
-                `<p class="empty-copy">Sin findings relevantes en esta generación.</p>${renderReportFollowUp(report.limitations)}`;
+                `<p class="empty-copy">No relevant findings detected in this run.</p>${renderReportFollowUp(report.limitations)}`;
             return;
         }
 
@@ -884,7 +924,7 @@
                         <p class="empty-copy">${escapeHtml(finding.detail || "")}</p>
                         ${
                             finding.recommendation
-                                ? `<p class="empty-copy"><strong>Acción:</strong> ${escapeHtml(finding.recommendation)}</p>`
+                                ? `<p class="empty-copy"><strong>Action:</strong> ${escapeHtml(finding.recommendation)}</p>`
                                 : ""
                         }
                         ${finding.path ? `<p class="empty-copy">${escapeHtml(finding.path)}</p>` : ""}
@@ -896,16 +936,16 @@
 
     function renderHealthchecks(report) {
         if (!report || (!report.summary && !(report.items || []).length)) {
-            elements.healthcheckSummary.textContent = "Todavía no hay healthchecks calculados.";
+            elements.healthcheckSummary.textContent = "No healthchecks calculated yet.";
             elements.healthcheckDetails.textContent =
-                "Los healthchecks automáticos se mostrarán cuando el análisis detecte comandos portables para el runtime.";
+                "Healthcheck details will appear once the analysis detects portable runtime commands.";
             return;
         }
 
-        elements.healthcheckSummary.textContent = report.summary || "Healthchecks calculados.";
+        elements.healthcheckSummary.textContent = report.summary || "Healthchecks calculated.";
         const lines = (report.items || []).map((item) => {
             const prefix = item.supported ? "AUTO" : "MANUAL";
-            const command = item.command?.length ? item.command.join(" ") : item.reason || "Sin comando.";
+            const command = item.command?.length ? item.command.join(" ") : item.reason || "No command.";
             return `${prefix} · ${item.component_name} (${item.port})\n${command}`;
         });
         elements.healthcheckDetails.textContent = lines.join("\n\n") || report.summary;
@@ -913,13 +953,13 @@
 
     function renderCicd(report) {
         if (!report || !(report.generated_paths || []).length) {
-            elements.cicdSummary.textContent = "Todavía no hay pipeline generado.";
+            elements.cicdSummary.textContent = "No CI/CD pipeline generated yet.";
             elements.cicdArtifacts.innerHTML = "";
             return;
         }
 
         elements.cicdSummary.textContent =
-            `${report.summary || "Pipeline generado."} · ${report.provider || "provider pendiente"}${report.maturity ? ` · ${report.maturity}` : ""}`;
+            `${report.summary || "Pipeline generated."} · ${report.provider || "provider pending"}${report.maturity ? ` · ${report.maturity}` : ""}`;
         elements.cicdArtifacts.innerHTML =
             (report.generated_paths || [])
                 .map(
@@ -934,13 +974,13 @@
 
     function renderDeploy(report) {
         if (!report || !(report.generated_paths || []).length) {
-            elements.deploySummary.textContent = "Todavía no hay targets de deploy generados.";
+            elements.deploySummary.textContent = "No deployment targets generated yet.";
             elements.deployTargets.innerHTML = "";
             return;
         }
 
         elements.deploySummary.textContent =
-            `${report.summary || "Targets generados."} · ${(report.targets || []).join(", ")}${report.maturity ? ` · ${report.maturity}` : ""}`;
+            `${report.summary || "Targets generated."} · ${(report.targets || []).join(", ")}${report.maturity ? ` · ${report.maturity}` : ""}`;
         elements.deployTargets.innerHTML =
             (report.generated_paths || [])
                 .map(
@@ -971,7 +1011,7 @@
 
         if (!artifacts.length) {
             elements.tabs.innerHTML = "";
-            elements.editors.innerHTML = '<p class="empty-copy">No se generaron artefactos.</p>';
+            elements.editors.innerHTML = '<p class="empty-copy">No artifacts were generated for this run.</p>';
             return;
         }
 
@@ -1012,7 +1052,7 @@
                                 class="secondary-button"
                                 data-save-artifact="${artifact.id}"
                             >
-                                Guardar cambios
+                                Save changes
                             </button>
                         </header>
                         <div class="editor-card__surface" data-editor-surface="${artifact.id}"></div>
@@ -1028,8 +1068,8 @@
     function renderJob(kind, job) {
         if (kind === "validation") {
             if (!job) {
-                elements.validationSummary.textContent = "No ejecutada.";
-                elements.validationLogs.textContent = "Todavía no hay logs de validación.";
+                elements.validationSummary.textContent = "No validation executed yet.";
+                elements.validationLogs.textContent = "Validation logs will appear here.";
                 return;
             }
 
@@ -1037,9 +1077,9 @@
                 ? ` · ${job.result_payload.summary}`
                 : "";
             elements.validationSummary.textContent =
-                `${labelStatus(job.status)} · ${job.label || "Validación"}${summarySuffix}`;
+                `${labelStatus(job.status)} · ${job.label || "Validation"}${summarySuffix}`;
             elements.validationLogs.textContent =
-                job.logs || formatJson(job.result_payload) || "Todavía no hay logs de validación.";
+                job.logs || formatJson(job.result_payload) || "Validation logs will appear here.";
 
             if (job.is_processing) {
                 pollJob("validation", job.id);
@@ -1050,8 +1090,8 @@
         }
 
         if (!job) {
-            elements.githubSummary.textContent = "No se creó ningún PR todavía.";
-            elements.githubLogs.textContent = "Todavía no hay logs de GitHub.";
+            elements.githubSummary.textContent = "No pull request has been created yet.";
+            elements.githubLogs.textContent = "GitHub execution logs will appear here.";
             return;
         }
 
@@ -1059,7 +1099,7 @@
         const skippedSuffix = job.result_payload?.skipped ? " · sin cambios" : "";
         elements.githubSummary.textContent = `${labelStatus(job.status)} · ${job.label || "PR"}${skippedSuffix}${urlSuffix}`;
         elements.githubLogs.textContent =
-            job.logs || formatJson(job.result_payload) || "Todavía no hay logs de GitHub.";
+            job.logs || formatJson(job.result_payload) || "GitHub execution logs will appear here.";
 
         if (job.is_processing) {
             pollJob("github", job.id);
@@ -1070,9 +1110,9 @@
 
     function renderProfile(analysis) {
         if (!analysis) {
-            elements.profileSummary.textContent = "Todavía no hay un perfil activo cargado.";
+            elements.profileSummary.textContent = "There is no active generation profile yet.";
             elements.profileDetails.textContent =
-                "Seleccioná un análisis para ver cómo cambia la generación entre desarrollo y producción.";
+                "Select a run to compare how output changes across development, production, and CI profiles.";
             return;
         }
 
@@ -1081,27 +1121,27 @@
         const lines = [];
 
         if (profile === "development") {
-            lines.push("Perfil orientado a iteración local.");
-            lines.push("- bind mounts en compose cuando aplica");
-            lines.push("- comandos de hot reload o dev server");
+            lines.push("Profile oriented to local iteration.");
+            lines.push("- bind mounts in compose when available");
+            lines.push("- hot reload or development server commands");
             lines.push("- AUTODOCKER_PROFILE=development");
         } else if (profile === "ci") {
-            lines.push("Perfil orientado a pipelines y validación automatizada.");
-            lines.push("- artefactos reproducibles para build y test");
-            lines.push("- sin bind mounts de desarrollo");
+            lines.push("Profile oriented to pipelines and automated validation.");
+            lines.push("- reproducible artifacts for build and test");
+            lines.push("- no development bind mounts");
             lines.push("- AUTODOCKER_PROFILE=ci");
         } else {
-            lines.push("Perfil orientado a producción.");
-            lines.push("- imágenes finales optimizadas");
-            lines.push("- multi-stage cuando aplica");
+            lines.push("Profile oriented to production delivery.");
+            lines.push("- optimized final images");
+            lines.push("- multi-stage output when available");
             lines.push("- AUTODOCKER_PROFILE=production");
         }
 
         if (components.length > 1) {
-            lines.push(`- componentes detectados: ${components.length}`);
+            lines.push(`- detected components: ${components.length}`);
         }
 
-        elements.profileSummary.textContent = `Perfil activo: ${profileLabel(profile)} · ${analysis.detected_framework || "stack no detectado"}`;
+        elements.profileSummary.textContent = `Active profile: ${profileLabel(profile)} · ${analysis.detected_framework || "stack not detected"}`;
         elements.profileDetails.textContent = lines.join("\n");
     }
 
@@ -1110,17 +1150,17 @@
             return;
         }
         if (!preview) {
-            elements.previewSummary.textContent = "No hay preview activa.";
+            elements.previewSummary.textContent = "No preview is running.";
             elements.previewLinks.innerHTML = "";
-            elements.previewLogs.textContent = "Todavía no hay logs de preview.";
+            elements.previewLogs.textContent = "Preview logs will appear here.";
             elements.stopPreview.disabled = true;
             return;
         }
 
         elements.stopPreview.disabled = !preview.is_active;
-        elements.previewSummary.textContent = `${labelStatus(preview.status)} · ${preview.runtime_kind || "runtime pendiente"}`;
+        elements.previewSummary.textContent = `${labelStatus(preview.status)} · ${preview.runtime_kind || "runtime pending"}`;
         elements.previewLinks.innerHTML = renderPreviewLinks(preview.ports || {}, preview.access_url || "");
-        elements.previewLogs.textContent = preview.logs || "Todavía no hay logs de preview.";
+        elements.previewLogs.textContent = preview.logs || "Preview logs will appear here.";
 
         if (["queued", "running"].includes(preview.status)) {
             pollPreview(preview.id);
@@ -1138,7 +1178,7 @@
 
         if (!items.length) {
             elements.diffResults.innerHTML =
-                '<p class="empty-copy">No se encontraron diferencias relevantes.</p>';
+                '<p class="empty-copy">No relevant repository differences were detected.</p>';
             return;
         }
 
@@ -1150,7 +1190,7 @@
                             <span class="diff-entry__path">${escapeHtml(item.path)}</span>
                             <span class="badge subtle">${escapeHtml(item.status)}</span>
                         </summary>
-                        <pre class="log-view">${escapeHtml(item.diff || "No hay diff textual.")}</pre>
+                        <pre class="log-view">${escapeHtml(item.diff || "No textual diff is available.")}</pre>
                     </details>
                 `,
             )
@@ -1160,7 +1200,7 @@
     function renderPreviewLinks(ports, fallbackUrl) {
         const entries = Object.entries(ports || {});
         if (!entries.length && !fallbackUrl) {
-            return '<p class="empty-copy">No se expusieron puertos todavía.</p>';
+            return '<p class="empty-copy">No public preview endpoints are available yet.</p>';
         }
 
         const links = [];
@@ -1218,7 +1258,7 @@
                     state.polls.analysis = setTimeout(tick, 1500);
                 }
             } catch {
-                setStatusBadge("Polling interrumpido", "error");
+                setStatusBadge("Polling interrupted", "error");
             } finally {
                 state.busy.analysis = false;
             }
@@ -1378,7 +1418,7 @@
             script.async = true;
             script.crossOrigin = "anonymous";
             script.onload = resolve;
-            script.onerror = () => reject(new Error("No se pudo cargar Monaco."));
+            script.onerror = () => reject(new Error("Could not load Monaco."));
             document.body.appendChild(script);
         });
 
@@ -1431,35 +1471,35 @@
 
     function syncStatusFromAnalysis(analysis) {
         if (analysis.status === "failed") {
-            setStatusBadge("Análisis fallido", "error");
+            setStatusBadge("Analysis failed", "error");
             stopPoll("analysis");
             return;
         }
 
         if (analysis.is_processing) {
             setStatusBadge(
-                analysis.status === "queued" ? "Trabajo en cola" : "Analizando en background",
+                analysis.status === "queued" ? "Queued" : "Analyzing in background",
                 "running",
             );
             pollAnalysis(analysis.id);
             return;
         }
 
-        setStatusBadge("Listo", "ok");
+        setStatusBadge("Ready", "ok");
         stopPoll("analysis");
     }
 
     function buildSubtitle(analysis) {
         if (analysis.status === "queued") {
-            return "El análisis fue encolado. La UI va a refrescar automáticamente cuando el worker complete la ejecución.";
+            return "The run has been queued. This view refreshes automatically when background processing finishes.";
         }
         if (analysis.status === "analyzing") {
-            return "El worker está procesando el proyecto. Podés revisar el historial mientras tanto.";
+            return "The worker is analyzing the project. You can review recent runs while processing continues.";
         }
         if (analysis.status === "failed") {
-            return analysis.last_error || "La ejecución falló sin un mensaje específico.";
+            return analysis.last_error || "The execution failed without a specific error message.";
         }
-        return "Subí un proyecto o cargá un análisis del historial.";
+        return "Run a new analysis or load one from history to unlock artifacts, validation, and delivery actions.";
     }
 
     function seedPullRequestForm(analysis) {

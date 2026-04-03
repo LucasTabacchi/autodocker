@@ -14,7 +14,7 @@
             state.historyAnalyses = analyses || [];
             state.historyPage = 1;
             if (!state.historyAnalyses.length) {
-                elements.history.innerHTML = '<p class="empty-copy">Todavía no hay ejecuciones guardadas.</p>';
+                elements.history.innerHTML = '<p class="empty-copy">There are no saved runs yet.</p>';
                 if (elements.historyMoreButton) {
                     elements.historyMoreButton.hidden = true;
                     elements.historyMoreButton.classList.remove("is-visible");
@@ -31,7 +31,7 @@
         function renderHistoryList() {
             const analyses = state.historyAnalyses || [];
             if (!analyses.length) {
-                elements.history.innerHTML = '<p class="empty-copy">Todavía no hay ejecuciones guardadas.</p>';
+                elements.history.innerHTML = '<p class="empty-copy">There are no saved runs yet.</p>';
                 if (elements.historyMoreButton) {
                     elements.historyMoreButton.hidden = true;
                     elements.historyMoreButton.classList.remove("is-visible");
@@ -80,7 +80,7 @@
                 elements.historyMoreButton.hidden = !shouldShowToggle;
                 elements.historyMoreButton.classList.toggle("is-visible", shouldShowToggle);
                 elements.historyMoreButton.style.display = shouldShowToggle ? "inline-flex" : "none";
-                elements.historyMoreButton.textContent = state.historyExpanded ? "Ver menos" : "Ver más";
+                elements.historyMoreButton.textContent = state.historyExpanded ? "Show less" : "Show more";
             }
 
             if (elements.historyPagination) {
@@ -93,7 +93,7 @@
                     elements.historyPagination.hidden = !shouldShowPagination;
                     elements.historyPagination.style.display = shouldShowPagination ? "flex" : "none";
                     if (elements.historyPageInfo) {
-                        elements.historyPageInfo.textContent = `Página ${state.historyPage} de ${totalPages}`;
+                        elements.historyPageInfo.textContent = `Page ${state.historyPage} of ${totalPages}`;
                     }
                     if (elements.historyPrevButton) {
                         elements.historyPrevButton.disabled = state.historyPage <= 1;
@@ -131,8 +131,8 @@
 
             const activeWorkspace = currentWorkspace();
             elements.workspaceSummary.textContent = activeWorkspace
-                ? `Workspace activo: ${activeWorkspace.name} · ${activeWorkspace.member_count || 0} miembros`
-                : "Todavía no hay un workspace activo.";
+                ? `Active workspace: ${activeWorkspace.name} · ${activeWorkspace.member_count || 0} members`
+                : "There is no active workspace yet.";
             renderWorkspaceMembers(activeWorkspace);
             renderWorkspaceInvitations(activeWorkspace);
         }
@@ -140,13 +140,13 @@
         function renderWorkspaceMembers(workspace) {
             if (!workspace) {
                 elements.workspaceMembers.innerHTML =
-                    '<p class="empty-copy">Creá un workspace para invitar a tu equipo.</p>';
+                    '<p class="empty-copy">Create a workspace to invite your team.</p>';
                 return;
             }
 
             if (!(workspace.memberships || []).length) {
                 elements.workspaceMembers.innerHTML =
-                    '<p class="empty-copy">Todavía no hay miembros extra en este workspace.</p>';
+                    '<p class="empty-copy">There are no additional members in this workspace yet.</p>';
                 return;
             }
 
@@ -165,14 +165,14 @@
         function renderWorkspaceInvitations(workspace) {
             if (!workspace) {
                 elements.workspaceInvitations.innerHTML =
-                    '<p class="empty-copy">Creá un workspace para empezar a invitar personas.</p>';
+                    '<p class="empty-copy">Create a workspace to start inviting people.</p>';
                 return;
             }
 
             const invitations = workspace.pending_invitations || [];
             if (!invitations.length) {
                 elements.workspaceInvitations.innerHTML =
-                    '<p class="empty-copy">Todavía no hay invitaciones pendientes en este workspace.</p>';
+                    '<p class="empty-copy">There are no pending invitations in this workspace yet.</p>';
                 return;
             }
 
@@ -180,7 +180,7 @@
                 .map(
                     (invitation) => `
                         <article class="history-item history-item--workspace">
-                            <span class="history-item__title">${escapeHtml(invitation.target_label || invitation.email || "Invitación")}</span>
+                            <span class="history-item__title">${escapeHtml(invitation.target_label || invitation.email || "Invitation")}</span>
                             <span class="history-item__meta">${escapeHtml(invitation.role)} · ${escapeHtml(deliveryStatusLabel(invitation.delivery_status))}</span>
                         </article>
                     `,
@@ -191,23 +191,23 @@
         function renderIncomingInvitations(invitations) {
             state.incomingInvitations = invitations || [];
             if (!state.incomingInvitations.length) {
-                elements.incomingInvitationsSummary.textContent = "No tenés invitaciones pendientes.";
+                elements.incomingInvitationsSummary.textContent = "You do not have pending invitations.";
                 elements.incomingInvitations.innerHTML =
-                    '<p class="empty-copy">Cuando otro usuario te invite a un workspace, lo vas a poder aceptar o rechazar desde acá.</p>';
+                    '<p class="empty-copy">Workspace invitations sent by other users will appear here for review.</p>';
                 return;
             }
 
-            const suffix = state.incomingInvitations.length === 1 ? "" : "es";
-            elements.incomingInvitationsSummary.textContent = `Tenés ${state.incomingInvitations.length} invitación${suffix} pendiente${suffix}.`;
+            const suffix = state.incomingInvitations.length === 1 ? "" : "s";
+            elements.incomingInvitationsSummary.textContent = `You have ${state.incomingInvitations.length} pending invitation${suffix}.`;
             elements.incomingInvitations.innerHTML = state.incomingInvitations
                 .map(
                     (invitation) => `
                         <article class="history-item history-item--invitation">
                             <span class="history-item__title">${escapeHtml(invitation.workspace?.name || "Workspace")}</span>
-                            <span class="history-item__meta">Invita ${escapeHtml(invitation.invited_by_username)} · ${escapeHtml(invitation.role)}</span>
+                            <span class="history-item__meta">Invited by ${escapeHtml(invitation.invited_by_username)} · ${escapeHtml(invitation.role)}</span>
                             <div class="history-item__actions">
-                                <button class="secondary-button" type="button" data-accept-invitation="${invitation.id}">Aceptar</button>
-                                <button class="secondary-button" type="button" data-decline-invitation="${invitation.id}">Rechazar</button>
+                                <button class="secondary-button" type="button" data-accept-invitation="${invitation.id}">Accept</button>
+                                <button class="secondary-button" type="button" data-decline-invitation="${invitation.id}">Decline</button>
                             </div>
                         </article>
                     `,
@@ -238,7 +238,7 @@
                 <span class="history-item__dot ${historyDotClass(analysis.status)}"></span>
                 <span class="history-item__body">
                     <span class="history-item__title">${escapeHtml(analysis.project_name)}</span>
-                    <span class="history-item__meta">${escapeHtml(analysis.detected_framework || "Sin clasificar")}</span>
+                    <span class="history-item__meta">${escapeHtml(analysis.detected_framework || "Unclassified stack")}</span>
                 </span>
                 <span class="history-item__badge ${historyBadgeClass(analysis.status)}">${escapeHtml(labelStatus(analysis.status))}</span>
             `;

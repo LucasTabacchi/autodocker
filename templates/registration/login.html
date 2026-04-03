@@ -1,819 +1,113 @@
 {% extends "base.html" %}
 
-{% block title %}Ingresar | AutoDocker{% endblock %}
+{% block title %}Sign In | AutoDocker{% endblock %}
 
-{% block extra_head %}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --teal: #00e5b0;
-    --teal-dim: rgba(0,229,176,0.15);
-    --bg: #080a09;
-    --bg-left: #0b1410;
-    --card: #111614;
-    --card-border: rgba(0,229,176,0.12);
-    --text: #ffffff;
-    --muted: #6b7c76;
-    --muted-light: #a0b0aa;
-    --input-bg: #0d1210;
-    --input-border: rgba(255,255,255,0.08);
-    --error: #ff6b6b;
-  }
-
-  html, body {
-    height: 100vh;
-    overflow: hidden;
-    font-family: "DM Sans", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-
-  body.auth-body--login {
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  .layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    height: 100vh;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .left {
-    background: var(--bg-left);
-    padding: 28px 44px;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .left::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(0,229,176,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,229,176,0.03) 1px, transparent 1px);
-    background-size: 48px 48px;
-    pointer-events: none;
-  }
-
-  .left::after {
-    content: "";
-    position: absolute;
-    bottom: -100px;
-    left: -80px;
-    width: 420px;
-    height: 420px;
-    background: radial-gradient(circle, rgba(0,229,176,0.07) 0%, transparent 70%);
-    pointer-events: none;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    position: relative;
-    z-index: 1;
-    flex-shrink: 0;
-  }
-
-  .logo-icon {
-    width: 32px;
-    height: 32px;
-    background: linear-gradient(135deg, #00e5b0, #00a87a);
-    border-radius: 7px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: "DM Mono", monospace;
-    font-size: 11px;
-    font-weight: 500;
-    color: #000;
-  }
-
-  .logo-name {
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: -0.02em;
-  }
-
-  .left-content {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
-    z-index: 1;
-  }
-
-  .eyebrow {
-    font-family: "DM Mono", monospace;
-    font-size: 9px;
-    letter-spacing: 0.2em;
-    color: var(--teal);
-    text-transform: uppercase;
-    margin-bottom: 14px;
-    opacity: 0;
-    animation: fadeUp 0.6s ease 0.1s forwards;
-  }
-
-  .hero-heading {
-    font-family: "Playfair Display", serif;
-    font-size: clamp(32px, 3.6vw, 52px);
-    font-weight: 900;
-    font-style: italic;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    margin-bottom: 14px;
-    opacity: 0;
-    animation: fadeUp 0.7s ease 0.2s forwards;
-  }
-
-  .hero-heading em {
-    font-style: italic;
-    color: var(--teal);
-  }
-
-  .hero-desc {
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--muted-light);
-    max-width: 380px;
-    margin-bottom: 18px;
-    font-weight: 300;
-    opacity: 0;
-    animation: fadeUp 0.7s ease 0.3s forwards;
-  }
-
-  .feature-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 18px;
-    opacity: 0;
-    animation: fadeUp 0.7s ease 0.4s forwards;
-  }
-
-  .pill {
-    padding: 5px 11px;
-    border: 1px solid rgba(0,229,176,0.2);
-    border-radius: 999px;
-    font-size: 11px;
-    color: var(--muted-light);
-    background: rgba(0,229,176,0.04);
-    transition: border-color 0.2s, color 0.2s;
-    cursor: default;
-  }
-
-  .pill:hover {
-    border-color: var(--teal);
-    color: var(--teal);
-  }
-
-  .feature-cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    opacity: 0;
-    animation: fadeUp 0.7s ease 0.5s forwards;
-  }
-
-  .feat-card {
-    background: rgba(0,229,176,0.04);
-    border: 1px solid rgba(0,229,176,0.1);
-    border-radius: 10px;
-    padding: 11px;
-  }
-
-  .feat-icon {
-    width: 22px;
-    height: 22px;
-    background: var(--teal-dim);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 7px;
-    font-size: 11px;
-  }
-
-  .feat-title {
-    font-size: 11px;
-    font-weight: 500;
-    margin-bottom: 3px;
-  }
-
-  .feat-desc {
-    font-size: 10px;
-    color: var(--muted);
-    line-height: 1.4;
-  }
-
-  .right {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 28px 52px;
-    background: var(--bg);
-    position: relative;
-    overflow: hidden;
-  }
-
-  .right::before {
-    content: "";
-    position: absolute;
-    top: -80px;
-    right: -80px;
-    width: 360px;
-    height: 360px;
-    background: radial-gradient(circle, rgba(0,229,176,0.05) 0%, transparent 70%);
-    pointer-events: none;
-  }
-
-  .right-header {
-    margin-bottom: 20px;
-    flex-shrink: 0;
-    opacity: 0;
-    animation: fadeUp 0.6s ease 0.2s forwards;
-  }
-
-  .welcome-text {
-    font-family: "Playfair Display", serif;
-    font-size: clamp(28px, 2.8vw, 42px);
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    margin-bottom: 8px;
-  }
-
-  .welcome-sub {
-    font-size: 12px;
-    color: var(--muted-light);
-    line-height: 1.55;
-    font-weight: 300;
-    max-width: 320px;
-  }
-
-  .login-card {
-    background: var(--card);
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
-    padding: 22px;
-    margin-bottom: 14px;
-    flex-shrink: 0;
-    opacity: 0;
-    animation: fadeUp 0.7s ease 0.35s forwards;
-  }
-
-  .card-header-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 18px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-  }
-
-  .card-icon {
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
-    background: var(--teal-dim);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--teal);
-    font-size: 13px;
-  }
-
-  .card-title {
-    font-size: 13px;
-    font-weight: 500;
-    margin-bottom: 3px;
-  }
-
-  .card-subtitle {
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.45;
-  }
-
-  .field {
-    margin-bottom: 12px;
-  }
-
-  .field label {
-    display: block;
-    font-family: "DM Mono", monospace;
-    font-size: 9px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted-light);
-    margin-bottom: 6px;
-  }
-
-  .input-wrap {
-    position: relative;
-  }
-
-  .field input {
-    width: 100%;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: var(--text);
-    font-family: "DM Sans", sans-serif;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .field input:focus {
-    border-color: rgba(0,229,176,0.4);
-    box-shadow: 0 0 0 3px rgba(0,229,176,0.06);
-  }
-
-  .eye-btn {
-    position: absolute;
-    right: 11px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--muted);
-    font-size: 13px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    transition: color 0.2s;
-  }
-
-  .eye-btn:hover {
-    color: var(--teal);
-  }
-
-  .eye-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .btn-login {
-    width: 100%;
-    background: var(--teal);
-    color: #000;
-    border: none;
-    border-radius: 999px;
-    padding: 12px;
-    font-size: 13px;
-    font-weight: 600;
-    font-family: "DM Sans", sans-serif;
-    cursor: pointer;
-    margin-top: 6px;
-    letter-spacing: 0.01em;
-    transition: opacity 0.2s, transform 0.15s;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .btn-login::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-    transform: translateX(-100%);
-    transition: transform 0.4s;
-  }
-
-  .btn-login:hover::after {
-    transform: translateX(100%);
-  }
-
-  .btn-login:hover {
-    opacity: 0.92;
-    transform: translateY(-1px);
-  }
-
-  .btn-login:active {
-    transform: translateY(0);
-  }
-
-  .btn-login.loading {
-    opacity: 0.6;
-    cursor: not-allowed;
-    pointer-events: none;
-  }
-
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 12px 0;
-    color: var(--muted);
-    font-size: 11px;
-  }
-
-  .divider::before,
-  .divider::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: rgba(255,255,255,0.06);
-  }
-
-  .error-msg {
-    display: none;
-    color: #ff6b6b;
-    font-size: 11px;
-    margin-top: 8px;
-    padding: 8px 12px;
-    background: rgba(255,107,107,0.08);
-    border: 1px solid rgba(255,107,107,0.2);
-    border-radius: 7px;
-    font-family: "DM Mono", monospace;
-    line-height: 1.5;
-  }
-
-  .error-msg.show {
-    display: block;
-  }
-
-  .signup-row {
-    text-align: center;
-    font-size: 12px;
-    color: var(--muted);
-    flex-shrink: 0;
-    opacity: 0;
-    animation: fadeUp 0.6s ease 0.5s forwards;
-  }
-
-  .signup-row a {
-    color: var(--teal);
-    text-decoration: none;
-    font-weight: 500;
-    transition: opacity 0.2s;
-  }
-
-  .signup-row a:hover {
-    opacity: 0.75;
-  }
-
-  .v-line {
-    position: absolute;
-    left: 50%;
-    top: 32px;
-    bottom: 32px;
-    width: 1px;
-    background: linear-gradient(to bottom, transparent, rgba(0,229,176,0.15) 30%, rgba(0,229,176,0.15) 70%, transparent);
-    pointer-events: none;
-    z-index: 10;
-  }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  @media (min-width: 1200px) {
-    .layout {
-      grid-template-columns: 50.7% 49.3%;
-    }
-
-    .left {
-      padding: 40px 66px 40px 66px;
-    }
-
-    .right {
-      align-items: center;
-      padding: 40px 80px 40px 72px;
-    }
-
-    .left-content {
-      max-width: 790px;
-      transform: translateY(10px);
-    }
-
-    .hero-heading {
-      font-size: clamp(80px, 5.8vw, 104px);
-      line-height: 0.91;
-      letter-spacing: -0.03em;
-      margin-bottom: 22px;
-    }
-
-    .hero-desc {
-      max-width: 680px;
-      font-size: 16.5px;
-      margin-bottom: 30px;
-    }
-
-    .feature-pills {
-      gap: 12px;
-      margin-bottom: 28px;
-    }
-
-    .pill {
-      padding: 10px 18px;
-      font-size: 14.5px;
-    }
-
-    .feature-cards {
-      gap: 16px;
-    }
-
-    .feat-card {
-      min-height: 148px;
-      padding: 20px 18px 20px;
-    }
-
-    .feat-icon {
-      width: 34px;
-      height: 34px;
-      margin-bottom: 13px;
-      font-size: 15px;
-    }
-
-    .feat-title {
-      font-size: 16px;
-      margin-bottom: 7px;
-    }
-
-    .feat-desc {
-      font-size: 13.75px;
-      line-height: 1.45;
-    }
-
-    .right-header,
-    .login-card,
-    .signup-row {
-      width: min(100%, 890px);
-    }
-
-    .right-header {
-      margin-bottom: 28px;
-      transform: translateY(-6px);
-    }
-
-    .welcome-text {
-      font-size: clamp(64px, 4.65vw, 94px);
-      line-height: 0.93;
-      margin-bottom: 14px;
-    }
-
-    .welcome-sub {
-      max-width: 580px;
-      font-size: 16.5px;
-    }
-
-    .login-card {
-      border-radius: 18px;
-      padding: 40px 40px 34px;
-      margin-bottom: 26px;
-    }
-
-    .card-header-row {
-      gap: 16px;
-      margin-bottom: 26px;
-      padding-bottom: 20px;
-    }
-
-    .card-icon {
-      width: 40px;
-      height: 40px;
-      min-width: 40px;
-      border-radius: 11px;
-      font-size: 17px;
-    }
-
-    .card-title {
-      font-size: 19px;
-      margin-bottom: 4px;
-    }
-
-    .card-subtitle {
-      font-size: 15px;
-    }
-
-    .field {
-      margin-bottom: 20px;
-    }
-
-    .field label {
-      font-size: 11px;
-      margin-bottom: 8px;
-    }
-
-    .field input {
-      padding: 16px 18px;
-      font-size: 16px;
-      border-radius: 10px;
-    }
-
-    .eye-btn {
-      right: 16px;
-    }
-
-    .btn-login {
-      padding: 18px 18px;
-      font-size: 16.5px;
-      margin-top: 14px;
-    }
-
-    .divider {
-      margin: 18px 0 6px;
-      font-size: 13.5px;
-    }
-
-    .signup-row {
-      font-size: 15.5px;
-    }
-  }
-
-  @media (max-width: 980px) {
-    html, body, body.auth-body--login {
-      height: auto;
-      overflow-x: hidden;
-      overflow-y: auto;
-    }
-
-    .layout {
-      grid-template-columns: 1fr;
-      height: auto;
-      min-height: 100vh;
-    }
-
-    .v-line {
-      display: none;
-    }
-
-    .right {
-      order: -1;
-      padding: 28px 28px 20px;
-    }
-
-    .left {
-      padding: 28px;
-    }
-
-    .left-content {
-      justify-content: flex-start;
-      padding-top: 28px;
-    }
-
-    .feature-cards {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 640px) {
-    .left, .right {
-      padding: 22px 20px;
-    }
-
-    .feature-cards {
-      grid-template-columns: 1fr;
-    }
-
-    .hero-heading {
-      font-size: clamp(40px, 15vw, 56px);
-    }
-
-    .welcome-text {
-      font-size: clamp(34px, 12vw, 44px);
-    }
-
-    .login-card {
-      padding: 18px;
-    }
-
-    .hero-desc,
-    .welcome-sub {
-      max-width: none;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .eyebrow,
-    .hero-heading,
-    .hero-desc,
-    .feature-pills,
-    .feature-cards,
-    .right-header,
-    .login-card,
-    .signup-row {
-      animation: none;
-      opacity: 1;
-    }
-
-    .btn-login,
-    .pill,
-    .eye-btn {
-      transition: none;
-    }
-  }
-</style>
-{% endblock %}
-
-{% block body_class %}auth-body auth-body--login{% endblock %}
+{% block body_class %}auth-body{% endblock %}
 
 {% block content %}
-<div class="layout">
-  <div class="v-line"></div>
-
-  <div class="left">
-    <div class="logo">
-      <div class="logo-icon">AD</div>
-      <span class="logo-name">AutoDocker</span>
-    </div>
-
-    <div class="left-content">
-      <p class="eyebrow">Automatización de contenedores</p>
-      <h1 class="hero-heading">Orquestá stacks,<br><em>previews</em><br>y entregas<br>sin perder<br>contexto.</h1>
-      <p class="hero-desc">Detectá el stack real del repo, generá artefactos por componente y validá todo antes de abrir un pull request. Una sola superficie para operar dockerización en equipos con monorepos y servicios mixtos.</p>
-
-      <div class="feature-pills">
-        <span class="pill">Dockerfiles por componente</span>
-        <span class="pill">Diff contra el repo</span>
-        <span class="pill">Build validation</span>
-        <span class="pill">Preview ejecutable</span>
-      </div>
-
-      <div class="feature-cards">
-        <div class="feat-card">
-          <div class="feat-icon">🔒</div>
-          <div class="feat-title">Acceso seguro</div>
-          <div class="feat-desc">Sesiones Django y separación por usuario</div>
+<main class="auth-page">
+  <section class="auth-showcase">
+    <div class="auth-showcase__content">
+      <div class="auth-brand">
+        <div class="auth-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="icon-svg">
+            <path d="M6 7.5A2.5 2.5 0 0 1 8.5 5h7A2.5 2.5 0 0 1 18 7.5v9A2.5 2.5 0 0 1 15.5 19h-7A2.5 2.5 0 0 1 6 16.5z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M9 9h6M9 12h6M9 15h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
         </div>
-        <div class="feat-card">
-          <div class="feat-icon">⚡</div>
-          <div class="feat-title">Siempre sincronizado</div>
-          <div class="feat-desc">Worker, Redis y validaciones en background</div>
-        </div>
-        <div class="feat-card">
-          <div class="feat-icon">🚀</div>
-          <div class="feat-title">Pipeline listo</div>
-          <div class="feat-desc">Desde detección hasta preview ejecutable</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="right">
-    <div class="right-header">
-      <h2 class="welcome-text">Bienvenido<br>de nuevo</h2>
-      <p class="welcome-sub">Ingresá para revisar análisis, previews y trabajo compartido desde tu workspace.</p>
-    </div>
-
-    <div class="login-card">
-      <div class="card-header-row">
-        <div class="card-icon">🔑</div>
-        <div>
-          <div class="card-title">Acceso a tu workspace</div>
-          <div class="card-subtitle">Ingresá con tu usuario para continuar con análisis, diff y previews.</div>
+        <div class="auth-brand__copy">
+          <strong>AutoDocker</strong>
+          <span>Developer control center</span>
         </div>
       </div>
 
-      <div id="login-flow" data-login-url="{% url 'login' %}" data-next-url="{{ next_url }}" data-default-redirect="{% url 'core:dashboard' %}">
+      <p class="section-kicker">Infrastructure workflow</p>
+      <h1>Dockerize, validate, and deliver changes from one operational surface.</h1>
+      <p>
+        Analyze real repositories, review editable artifacts, run reproducible validation, and prepare previews or pull requests without jumping between tools.
+      </p>
+
+      <div class="auth-proof-list">
+        <span class="auth-proof-pill">Artifact generation</span>
+        <span class="auth-proof-pill">Build validation</span>
+        <span class="auth-proof-pill">Preview runtime</span>
+        <span class="auth-proof-pill">Workspace delivery</span>
+      </div>
+    </div>
+
+    <div class="auth-showcase__footer">
+      <article class="auth-proof-card">
+        <span class="icon-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="icon-svg">
+            <path d="M7 8.5 12 5l5 3.5v7L12 19l-5-3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="m9.5 11.5 1.7 1.7 3.3-3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <strong>Reliable decisions</strong>
+        <p>Clear hierarchy to understand current state, risk level, and the next step of each analysis.</p>
+      </article>
+
+      <article class="auth-proof-card">
+        <span class="icon-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="icon-svg">
+            <path d="M5 12h14M12 5v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <strong>Iterative workflow</strong>
+        <p>Edit generated artifacts and relaunch the pipeline without losing the context of each run.</p>
+      </article>
+
+      <article class="auth-proof-card">
+        <span class="icon-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="icon-svg">
+            <path d="M12 3 4 7v5c0 4.7 3.2 8.9 8 10 4.8-1.1 8-5.3 8-10V7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="m9.5 12 1.7 1.7L14.8 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <strong>Secure access</strong>
+        <p>Sessions, workspaces, and shared delivery actions inside the same operational environment.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-panel__card">
+      <div class="auth-panel__header">
+        <p class="section-kicker">Sign in</p>
+        <h1>Access your workspace</h1>
+        <p>Review analyses, previews, validations, and delivery activity from one unified dashboard.</p>
+      </div>
+
+      <div id="login-flow" class="auth-form-stack" data-login-url="{% url 'login' %}" data-next-url="{{ next_url }}" data-default-redirect="{% url 'core:dashboard' %}">
         {% csrf_token %}
 
         <div class="field">
-          <label for="username">Usuario</label>
-          <input type="text" id="username" autocomplete="username">
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="username" placeholder="lucas-garcia">
         </div>
 
         <div class="field">
-          <label for="password">Contraseña</label>
+          <label for="password">Password</label>
           <div class="input-wrap">
-            <input type="password" id="password" autocomplete="current-password">
-            <button class="eye-btn" type="button" id="eyeBtn" aria-label="Mostrar contraseña" aria-pressed="false">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+            <input type="password" id="password" autocomplete="current-password" placeholder="Your password">
+            <button class="eye-btn" type="button" id="eyeBtn" aria-label="Show password" aria-pressed="false">
+              <svg viewBox="0 0 24 24" class="icon-svg" aria-hidden="true">
                 <path d="M12 5c5.7 0 9.5 5.6 9.7 5.8a1 1 0 0 1 0 1.2C21.5 12.4 17.7 18 12 18S2.5 12.4 2.3 12.2a1 1 0 0 1 0-1.2C2.5 10.6 6.3 5 12 5Zm0 2C8.4 7 5.5 10 4.4 11.4 5.5 12.9 8.4 16 12 16s6.5-3.1 7.6-4.6C18.5 10 15.6 7 12 7Zm0 1.8a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4Zm0 2a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z" fill="currentColor"/>
               </svg>
             </button>
           </div>
         </div>
 
-        <button class="btn-login" id="loginBtn" type="button">Ingresar</button>
-        <div class="error-msg{% if form.non_field_errors %} show{% endif %}" id="errorMsg">{% if form.non_field_errors %}{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}{% endif %}</div>
-        <div class="divider">o</div>
+        <button class="primary-button" id="loginBtn" type="button">Sign in</button>
+        <div class="form-message form-message--error{% if form.non_field_errors %} show{% endif %}" id="errorMsg">{% if form.non_field_errors %}{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}{% endif %}</div>
       </div>
-    </div>
 
-    <div class="signup-row">
-      ¿Todavía no tenés cuenta? <a href="{% url 'signup' %}">Crear cuenta</a>
+      <p class="auth-helper">
+        Don't have an account yet? <a href="{% url 'signup' %}">Create account</a>
+      </p>
     </div>
-  </div>
-</div>
+  </section>
+</main>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -844,14 +138,14 @@
 
     const setLoading = (isLoading) => {
       button.classList.toggle("loading", isLoading);
-      button.textContent = isLoading ? "Ingresando..." : "Ingresar";
+      button.textContent = isLoading ? "Signing in..." : "Sign in";
     };
 
     const submitLogin = async () => {
       clearError();
 
       if (!username.value.trim() || !password.value) {
-        showError("Completá usuario y contraseña para continuar.");
+        showError("Enter your username and password to continue.");
         return;
       }
 
@@ -880,12 +174,12 @@
         const payload = await response.json();
 
         if (!response.ok || !payload.ok) {
-          throw new Error(payload.detail || "Credenciales incorrectas. Verificá tu usuario y contraseña.");
+          throw new Error(payload.detail || "Incorrect credentials. Check your username and password.");
         }
 
         window.location.assign(getRedirectUrl(payload));
       } catch (err) {
-        showError(err.message || "Credenciales incorrectas. Verificá tu usuario y contraseña.");
+        showError(err.message || "Incorrect credentials. Check your username and password.");
       } finally {
         setLoading(false);
       }
@@ -896,7 +190,7 @@
       const isVisible = nextType === "text";
       password.type = nextType;
       eye.setAttribute("aria-pressed", String(isVisible));
-      eye.setAttribute("aria-label", isVisible ? "Ocultar contraseña" : "Mostrar contraseña");
+      eye.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
     };
 
     [username, password].forEach((field) => {
