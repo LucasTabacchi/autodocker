@@ -22,8 +22,7 @@
     <nav class="sidebar-nav" aria-label="Primary">
       <button type="button" class="nav-link is-active" data-sidebar-target="overview" data-scroll-target="overview-hero">Overview</button>
       <button type="button" class="nav-link" data-sidebar-target="analysis" data-workbench-target="analysis-form">New Analysis</button>
-      <button type="button" class="nav-link" data-sidebar-target="history" data-scroll-target="history-panel">Saved Runs</button>
-      <button type="button" class="nav-link" data-sidebar-target="workspace" data-run-tab-target="workspace" data-scroll-target="analysis-result">Workspace</button>
+      <button type="button" class="nav-link" data-sidebar-target="workspace" data-scroll-target="workspace-panel">Workspace</button>
     </nav>
 
     <div class="sidebar-meta">
@@ -202,7 +201,6 @@
               <button type="button" class="run-tab is-active" data-run-tab="summary">Summary</button>
               <button type="button" class="run-tab" data-run-tab="artifacts">Artifacts</button>
               <button type="button" class="run-tab" data-run-tab="delivery">Delivery</button>
-              <button type="button" class="run-tab" data-run-tab="workspace">Workspace</button>
             </nav>
             <p id="run-tab-hint" class="run-tab-hint empty-copy">Select or create a run to unlock these sections.</p>
 
@@ -377,71 +375,80 @@
               </div>
             </section>
 
-            <section class="run-panel" data-run-panel="workspace" hidden>
-              <div class="ops-grid">
-                <section class="ops-card">
-                  <div class="ops-card__head">
-                    <div>
-                      <p class="section-kicker">Workspace</p>
-                      <h3>Collaborators</h3>
-                    </div>
-                    <div class="ops-card__phase-num">W</div>
-                  </div>
-                  <p id="workspace-summary" class="empty-copy">
-                    {% if active_workspace %}
-                      Active workspace: <strong>{{ active_workspace.name }}</strong>
-                    {% else %}
-                      There is no active workspace yet.
-                    {% endif %}
-                  </p>
-                  <form id="workspace-form" class="stack-form" style="margin-top: 16px;">
-                    <label>
-                      <span>New workspace</span>
-                      <input id="workspace-name" type="text" placeholder="Platform team">
-                    </label>
-                    <label>
-                      <span>Description</span>
-                      <input id="workspace-description" type="text" placeholder="Shared dockerization workflow">
-                    </label>
-                    <button id="workspace-create-button" type="submit" class="secondary-button secondary-button--full">Create workspace</button>
-                  </form>
-                  <form id="workspace-member-form" class="stack-form" style="margin-top: 14px;">
-                    <label>
-                      <span>Invite by username or email</span>
-                      <input id="workspace-member-username" type="text" placeholder="username or email">
-                    </label>
-                    <label>
-                      <span>Role</span>
-                      <select id="workspace-member-role">
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                      </select>
-                    </label>
-                    <button id="workspace-member-button" type="submit" class="secondary-button secondary-button--full">Send invitation</button>
-                  </form>
-                  <div class="subsection-head" style="margin-top: 18px;">Pending invitations</div>
-                  <div id="workspace-invitations" class="history-list" style="margin-top: 10px;">
-                    <p class="empty-copy">There are no pending invitations in this workspace yet.</p>
-                  </div>
-                  <div class="subsection-head" style="margin-top: 18px;">Members</div>
-                  <div id="workspace-members" class="history-list" style="margin-top: 10px;"></div>
-                </section>
+          </section>
 
-                <section class="ops-card">
-                  <div class="ops-card__head">
-                    <div>
-                      <p class="section-kicker">Incoming</p>
-                      <h3>Invitations for you</h3>
-                    </div>
-                    <div class="ops-card__phase-num">I</div>
-                  </div>
-                  <p id="incoming-invitations-summary" class="empty-copy">You do not have pending invitations.</p>
-                  <div id="incoming-invitations" class="history-list" style="margin-top: 12px;">
-                    <p class="empty-copy">Incoming workspace invitations will appear here.</p>
-                  </div>
-                </section>
+          <section id="workspace-panel" class="panel run-detail">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Workspace</p>
+                <h2 style="margin-top: 8px; font-family: var(--font-heading); font-size: 28px; letter-spacing: -0.04em;">Collaboration space</h2>
+                <p class="empty-copy" style="margin-top: 8px;">Manage collaborators, invitations, and active team context from one place.</p>
               </div>
-            </section>
+            </div>
+
+            <div class="ops-grid">
+              <section class="ops-card">
+                <div class="ops-card__head">
+                  <div>
+                    <p class="section-kicker">Workspace</p>
+                    <h3>Collaborators</h3>
+                  </div>
+                  <div class="ops-card__phase-num">W</div>
+                </div>
+                <p id="workspace-summary" class="empty-copy">
+                  {% if active_workspace %}
+                    Active workspace: <strong>{{ active_workspace.name }}</strong>
+                  {% else %}
+                    There is no active workspace yet.
+                  {% endif %}
+                </p>
+                <form id="workspace-form" class="stack-form" style="margin-top: 16px;">
+                  <label>
+                    <span>New workspace</span>
+                    <input id="workspace-name" type="text" placeholder="Platform team">
+                  </label>
+                  <label>
+                    <span>Description</span>
+                    <input id="workspace-description" type="text" placeholder="Shared dockerization workflow">
+                  </label>
+                  <button id="workspace-create-button" type="submit" class="secondary-button secondary-button--full">Create workspace</button>
+                </form>
+                <form id="workspace-member-form" class="stack-form" style="margin-top: 14px;">
+                  <label>
+                    <span>Invite by username or email</span>
+                    <input id="workspace-member-username" type="text" placeholder="username or email">
+                  </label>
+                  <label>
+                    <span>Role</span>
+                    <select id="workspace-member-role">
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                    </select>
+                  </label>
+                  <button id="workspace-member-button" type="submit" class="secondary-button secondary-button--full">Send invitation</button>
+                </form>
+                <div class="subsection-head" style="margin-top: 18px;">Pending invitations</div>
+                <div id="workspace-invitations" class="history-list" style="margin-top: 10px;">
+                  <p class="empty-copy">There are no pending invitations in this workspace yet.</p>
+                </div>
+                <div class="subsection-head" style="margin-top: 18px;">Members</div>
+                <div id="workspace-members" class="history-list" style="margin-top: 10px;"></div>
+              </section>
+
+              <section class="ops-card">
+                <div class="ops-card__head">
+                  <div>
+                    <p class="section-kicker">Incoming</p>
+                    <h3>Invitations for you</h3>
+                  </div>
+                  <div class="ops-card__phase-num">I</div>
+                </div>
+                <p id="incoming-invitations-summary" class="empty-copy">You do not have pending invitations.</p>
+                <div id="incoming-invitations" class="history-list" style="margin-top: 12px;">
+                  <p class="empty-copy">Incoming workspace invitations will appear here.</p>
+                </div>
+              </section>
+            </div>
           </section>
         </div>
 

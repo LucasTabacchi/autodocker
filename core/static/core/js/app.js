@@ -777,7 +777,7 @@
         elements.panel.classList.remove("is-empty");
         elements.title.textContent = `${analysis.project_name} · ${analysis.detected_framework || "Unclassified stack"}`;
         elements.subtitle.textContent = buildSubtitle(analysis);
-        elements.runTabHint.textContent = "Switch between summary, artifacts, delivery, and workspace for this run.";
+        elements.runTabHint.textContent = "Switch between summary, artifacts, and delivery for this run.";
         runTabButtons.forEach((button) => {
             button.disabled = false;
         });
@@ -867,7 +867,7 @@
         elements.panel.classList.add("is-empty");
         elements.title.textContent = "No active run selected";
         elements.subtitle.textContent = "Run a new analysis or load one from history to inspect artifacts, validation, and delivery actions.";
-        elements.runTabHint.textContent = "Select or create a run to unlock these sections.";
+        elements.runTabHint.textContent = "Select or create a run to unlock summary, artifacts, and delivery.";
         elements.summaryGrid.innerHTML = "";
         elements.recommendations.innerHTML = "";
         elements.tabs.innerHTML = "";
