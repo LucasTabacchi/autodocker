@@ -262,8 +262,11 @@ console.log(job.id, job.status);
 - `GET /api/analyses/{id}/`
 - `POST /api/analyses/{id}/regenerate/`
 - `POST /api/analyses/{id}/validate/`
+- `POST /api/analyses/{id}/preview/`
 - `POST /api/analyses/{id}/github-pr/`
 - `GET /api/analyses/{id}/download/`
+- `GET /api/previews/{id}/`
+- `POST /api/previews/{id}/stop/`
 - `PATCH /api/artifacts/{id}/`
 - `GET /api/jobs/{id}/`
 
@@ -294,6 +297,8 @@ Notas operativas:
 - el runner expone un solo servicio HTTP público por preview
 - el runner prioriza servicios `web`, `app`, `frontend` y `site`
 - con `AUTODOCKER_PREVIEW_CADDY_ENABLED=true` publica y remueve subdominios reales a través de Caddy
+- una preview runner-managed no se marca como `ready` hasta que la URL HTTPS pública responde realmente
+- si el runner alcanza su límite de sesiones activas, la app principal reutiliza el fallo reciente en vez de crear múltiples previews fallidas por clicks repetidos
 - las previews vencidas se pueden reconciliar con:
 
 ```bash
@@ -335,6 +340,7 @@ Hay artefactos de despliegue listos en:
 Guía operativa paso a paso:
 
 - `docs/oracle-preview-runner.md`
+- `docs/local-preview-runner.md`
 
 ## Estructura del proyecto
 

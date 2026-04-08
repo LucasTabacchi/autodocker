@@ -87,6 +87,7 @@
         elements.previewLinks &&
         elements.previewLogs,
     );
+    const defaultPreviewButtonLabel = elements.preview?.textContent?.trim() || "Start preview";
 
     const state = {
         analysis: null,
@@ -117,6 +118,8 @@
             github: false,
             preview: false,
         },
+        previewCooldownUntil: 0,
+        previewCooldownTimer: null,
     };
     const helpers = window.AutoDockerHelpers || {};
     const escapeHtml =
@@ -518,6 +521,9 @@
                 method: "POST",
             });
             renderPreview(preview);
+            if (isPreviewCapacityFailure(preview)) {
+                startPreviewCapacityCooldown();
+            }
             if (["queued", "running"].includes(preview.status)) {
                 pollPreview(preview.id);
             }
@@ -791,9 +797,7 @@
         elements.regenerate.disabled = !state.analysis;
         elements.validate.disabled = !isReady || !validationCapability?.enabled;
         elements.diff.disabled = !isReady;
-        if (previewUiAvailable) {
-            elements.preview.disabled = !isReady || !previewCapability?.enabled;
-        }
+        updatePreviewButtonState(isReady, previewCapability);
         elements.githubButton.disabled = !isReady;
         if (previewUiAvailable) {
             elements.stopPreview.disabled = !(analysis.active_preview && analysis.active_preview.is_active);
@@ -801,9 +805,6 @@
         elements.download.href = isReady ? analysis.download_url : "#";
         elements.download.classList.toggle("is-disabled", !isReady);
         elements.validate.title = capabilityTitle(validationCapability, "Validate build");
-        if (previewUiAvailable) {
-            elements.preview.title = capabilityTitle(previewCapability, "Preview");
-        }
 
         renderSummaryCards(analysis, components);
         renderRecommendations(analysis.recommendations || []);
@@ -877,6 +878,7 @@
         elements.validate.disabled = true;
         elements.diff.disabled = true;
         if (previewUiAvailable) {
+            stopPreviewCapacityCooldown();
             elements.preview.disabled = true;
         }
         elements.githubButton.disabled = true;
@@ -1211,14 +1213,89 @@
         }
 
         elements.stopPreview.disabled = !preview.is_active;
-        elements.previewSummary.textContent = `${labelStatus(preview.status)} · ${preview.runtime_kind || "runtime pending"}`;
+        elements.previewSummary.textContent = previewSummaryText(preview);
         elements.previewLinks.innerHTML = renderPreviewLinks(preview.ports || {}, preview.access_url || "");
-        elements.previewLogs.textContent = preview.logs || "Preview logs will appear here.";
+        elements.previewLogs.textContent = previewLogsText(preview);
+        if (isPreviewCapacityFailure(preview)) {
+            startPreviewCapacityCooldown();
+        }
 
         if (["queued", "running"].includes(preview.status)) {
             pollPreview(preview.id);
         } else {
             stopPoll("preview");
+        }
+    }
+
+    function previewSummaryText(preview) {
+        if (isPreviewCapacityFailure(preview)) {
+            return "Failed · runner capacity reached";
+        }
+        return `${labelStatus(preview.status)} · ${preview.runtime_kind || "runtime pending"}`;
+    }
+
+    function previewLogsText(preview) {
+        if (isPreviewCapacityFailure(preview)) {
+            const originalLogs = (preview.logs || "").trim();
+            const guidance =
+                "The preview runner is at its active session limit. Wait for a running preview to finish, or stop an active preview and try again. The start button is temporarily paused to avoid duplicate failed requests.";
+            return originalLogs ? `${guidance}\n\nRunner detail:\n${originalLogs}` : guidance;
+        }
+        return preview.logs || "Preview logs will appear here.";
+    }
+
+    function isPreviewCapacityFailure(preview) {
+        const logs = String(preview?.logs || "").toLowerCase();
+        return preview?.status === "failed" && logs.includes("límite de previews activas");
+    }
+
+    function updatePreviewButtonState(isReady, previewCapability) {
+        if (!previewUiAvailable) {
+            return;
+        }
+        const cooldownRemaining = previewCooldownRemainingSeconds();
+        const capabilityEnabled = Boolean(isReady && previewCapability?.enabled);
+        elements.preview.disabled = !capabilityEnabled || cooldownRemaining > 0;
+        if (cooldownRemaining > 0) {
+            elements.preview.textContent = `${defaultPreviewButtonLabel} (${cooldownRemaining}s)`;
+            elements.preview.title = `Preview temporarily paused (${cooldownRemaining}s) after runner capacity was reached.`;
+            return;
+        }
+        elements.preview.textContent = defaultPreviewButtonLabel;
+        elements.preview.title = capabilityTitle(previewCapability, "Preview");
+    }
+
+    function previewCooldownRemainingSeconds() {
+        if (!state.previewCooldownUntil) {
+            return 0;
+        }
+        return Math.max(0, Math.ceil((state.previewCooldownUntil - Date.now()) / 1000));
+    }
+
+    function startPreviewCapacityCooldown() {
+        state.previewCooldownUntil = Date.now() + 15000;
+        if (state.previewCooldownTimer) {
+            clearInterval(state.previewCooldownTimer);
+        }
+        state.previewCooldownTimer = window.setInterval(() => {
+            if (previewCooldownRemainingSeconds() > 0) {
+                updatePreviewButtonState(state.analysis?.status === "ready", state.analysis?.runtime_capabilities?.preview || null);
+                return;
+            }
+            stopPreviewCapacityCooldown();
+            updatePreviewButtonState(state.analysis?.status === "ready", state.analysis?.runtime_capabilities?.preview || null);
+        }, 1000);
+        updatePreviewButtonState(state.analysis?.status === "ready", state.analysis?.runtime_capabilities?.preview || null);
+    }
+
+    function stopPreviewCapacityCooldown() {
+        state.previewCooldownUntil = 0;
+        if (state.previewCooldownTimer) {
+            clearInterval(state.previewCooldownTimer);
+            state.previewCooldownTimer = null;
+        }
+        if (previewUiAvailable) {
+            elements.preview.textContent = defaultPreviewButtonLabel;
         }
     }
 

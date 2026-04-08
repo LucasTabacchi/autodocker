@@ -1191,7 +1191,12 @@ class PreviewPublicationServiceTests(SimpleTestCase):
         ), patch(
             "core.services.preview_publication.run_command",
             return_value=SimpleNamespace(output="reloaded"),
-        ) as mock_run:
+        ) as mock_run, patch(
+            "core.services.preview_publication.PreviewPublicationService._public_url_is_ready",
+            return_value=True,
+        ), patch(
+            "core.services.preview_publication.time.sleep",
+        ):
             published = PreviewPublicationService().publish(preview_run, service_urls)
             route_path = Path(temp_dir) / "prv-111111111111.caddy"
             self.assertEqual(
@@ -1203,6 +1208,50 @@ class PreviewPublicationServiceTests(SimpleTestCase):
             self.assertIn("prv-111111111111.previews.example.com", route_content)
             self.assertIn("reverse_proxy 127.0.0.1:41000", route_content)
             mock_run.assert_called_once()
+
+    def test_publish_waits_until_public_url_is_reachable(self):
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+        service_urls = {"web": ["http://127.0.0.1:41000"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir, override_settings(
+            AUTODOCKER_PREVIEW_CADDY_ROUTES_DIR=temp_dir,
+            AUTODOCKER_PREVIEW_HTTP_READY_TIMEOUT_SECONDS=5,
+        ), patch(
+            "core.services.preview_publication.run_command",
+            return_value=SimpleNamespace(output="reloaded"),
+        ), patch(
+            "core.services.preview_publication.time.sleep",
+        ) as mock_sleep, patch(
+            "core.services.preview_publication.PreviewPublicationService._public_url_is_ready",
+            side_effect=[False, False, True],
+        ) as mock_is_ready:
+            published = PreviewPublicationService().publish(preview_run, service_urls)
+
+        self.assertEqual(
+            published,
+            {"web": ["https://prv-111111111111.previews.example.com"]},
+        )
+        self.assertEqual(mock_is_ready.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    def test_publish_raises_when_public_url_never_becomes_reachable(self):
+        preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
+        service_urls = {"web": ["http://127.0.0.1:41000"]}
+
+        with tempfile.TemporaryDirectory() as temp_dir, override_settings(
+            AUTODOCKER_PREVIEW_CADDY_ROUTES_DIR=temp_dir,
+            AUTODOCKER_PREVIEW_HTTP_READY_TIMEOUT_SECONDS=1,
+        ), patch(
+            "core.services.preview_publication.run_command",
+            return_value=SimpleNamespace(output="reloaded"),
+        ), patch(
+            "core.services.preview_publication.time.sleep",
+        ), patch(
+            "core.services.preview_publication.PreviewPublicationService._public_url_is_ready",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "no quedó accesible"):
+                PreviewPublicationService().publish(preview_run, service_urls)
 
     def test_unpublish_removes_existing_caddy_route(self):
         preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")

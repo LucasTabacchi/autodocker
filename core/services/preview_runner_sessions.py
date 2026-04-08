@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from urllib import error, request
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from core.models import PreviewRunnerSession
@@ -23,6 +24,32 @@ class PreviewRunnerSessionError(RuntimeError):
 
 
 class PreviewRunnerSessionService:
+    def get_or_create_reserved_session(self, *, validated_data: dict[str, object]) -> tuple[PreviewRunnerSession, bool]:
+        with transaction.atomic():
+            self.reconcile()
+            existing = (
+                PreviewRunnerSession.objects.select_for_update()
+                .filter(preview_id=validated_data["preview_id"])
+                .first()
+            )
+            if existing is not None:
+                return existing, False
+
+            self.ensure_capacity_available(including_new_session=True)
+            session = PreviewRunnerSession.objects.create(
+                preview_id=validated_data["preview_id"],
+                analysis_id=validated_data["analysis_id"],
+                project_name=validated_data["project_name"],
+                bundle_url=validated_data["bundle_url"],
+                bundle_sha256=validated_data["bundle_sha256"],
+                requested_ttl_seconds=validated_data["requested_ttl_seconds"],
+                metadata=validated_data.get("metadata") or {},
+                status=PreviewRunnerSession.Status.STARTING,
+                expires_at=timezone.now()
+                + timedelta(seconds=self._ttl_seconds_from_requested(validated_data["requested_ttl_seconds"])),
+            )
+            return session, True
+
     def start(self, session: PreviewRunnerSession) -> PreviewRunnerSession:
         self.reconcile()
         self.ensure_capacity_available(including_new_session=False)
@@ -177,6 +204,10 @@ class PreviewRunnerSessionService:
 
     def _ttl_seconds(self, session: PreviewRunnerSession) -> int:
         requested = max(int(session.requested_ttl_seconds or 0), 1)
+        return self._ttl_seconds_from_requested(requested)
+
+    def _ttl_seconds_from_requested(self, requested_ttl_seconds: int) -> int:
+        requested = max(int(requested_ttl_seconds or 0), 1)
         configured_default = max(int(settings.AUTODOCKER_PREVIEW_TTL_SECONDS), 1)
         maximum = max(int(getattr(settings, "AUTODOCKER_PREVIEW_MAX_TTL_SECONDS", configured_default)), 1)
         return min(requested, configured_default, maximum)

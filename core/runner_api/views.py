@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -42,31 +39,15 @@ class PreviewRunnerAuthenticatedApiView(APIView):
 class PreviewRunnerSessionListCreateApiView(PreviewRunnerAuthenticatedApiView):
     def post(self, request):
         service = PreviewRunnerSessionService()
-        service.reconcile()
         serializer = PreviewRunnerSessionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
-        session = PreviewRunnerSession.objects.filter(
-            preview_id=validated["preview_id"]
-        ).first()
-        if session is None:
-            try:
-                service.ensure_capacity_available(including_new_session=True)
-            except Exception as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-            session = PreviewRunnerSession.objects.create(
-                preview_id=validated["preview_id"],
-                analysis_id=validated["analysis_id"],
-                project_name=validated["project_name"],
-                bundle_url=validated["bundle_url"],
-                bundle_sha256=validated["bundle_sha256"],
-                requested_ttl_seconds=validated["requested_ttl_seconds"],
-                metadata=validated.get("metadata") or {},
-                status=PreviewRunnerSession.Status.STARTING,
-                expires_at=timezone.now()
-                + timedelta(seconds=self._ttl_seconds(validated["requested_ttl_seconds"])),
-            )
+        try:
+            session, created = service.get_or_create_reserved_session(validated_data=validated)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        if created:
             schedule_preview_runner_session(session)
             session.refresh_from_db()
 
@@ -74,14 +55,6 @@ class PreviewRunnerSessionListCreateApiView(PreviewRunnerAuthenticatedApiView):
             PreviewRunnerSessionSerializer(session).data,
             status=status.HTTP_202_ACCEPTED,
         )
-
-    def _ttl_seconds(self, requested_ttl_seconds: int) -> int:
-        configured_default = max(int(settings.AUTODOCKER_PREVIEW_TTL_SECONDS), 1)
-        maximum = max(
-            int(getattr(settings, "AUTODOCKER_PREVIEW_MAX_TTL_SECONDS", configured_default)),
-            1,
-        )
-        return min(max(int(requested_ttl_seconds), 1), configured_default, maximum)
 
 
 class PreviewRunnerSessionDetailApiView(PreviewRunnerAuthenticatedApiView):

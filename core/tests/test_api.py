@@ -1807,6 +1807,40 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
         AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
     )
+    @patch("core.services.remote_preview.PreviewRunnerClient.stop_preview")
+    def test_preview_stop_treats_missing_remote_session_as_stopped(self, mock_stop_preview):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo",
+            status=ProjectAnalysis.Status.READY,
+        )
+        preview = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.RUNNING,
+            command="remote_runner:create_preview",
+        )
+        mock_stop_preview.side_effect = PreviewRunnerError(
+            '{"detail":"No PreviewRunnerSession matches the given query."}'
+        )
+
+        response = self.client.post(reverse("core-api:preview-stop", args=[preview.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], PreviewRun.Status.STOPPED)
+        preview.refresh_from_db()
+        self.assertEqual(preview.status, PreviewRun.Status.STOPPED)
+        self.assertIn("runner session ya no existía", preview.logs)
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
     @patch("core.services.preview.RemotePreviewService.start")
     def test_preview_endpoint_accepts_smoke_fixture_analysis_for_remote_runner(self, mock_start):
         analysis = LocalPreviewSmokeService().prepare_analysis(
@@ -1834,6 +1868,34 @@ class AnalysisApiTests(AnalysisApiTestSupport, TestCase):
         self.assertEqual(payload["logs"], "runner accepted smoke fixture")
         self.assertEqual(payload["resource_names"], ["adprv_smoke"])
         mock_start.assert_called_once()
+
+    @override_settings(
+        AUTODOCKER_ENABLE_RUNTIME_JOBS=False,
+        AUTODOCKER_PREVIEW_BACKEND="remote_runner",
+        AUTODOCKER_PREVIEW_RUNNER_BASE_URL="https://preview-runner.internal",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+    )
+    def test_preview_endpoint_reuses_recent_capacity_failed_preview_instead_of_creating_another(self):
+        analysis = LocalPreviewSmokeService().prepare_analysis(
+            owner=self.user,
+            repository_url="https://github.com/acme/demo-app",
+        )
+        failed_preview = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.FAILED,
+            command="remote_runner:create_preview",
+            logs='{"detail":"Se alcanzó el límite de previews activas para este runner."}',
+        )
+
+        response = self.client.post(reverse("core-api:analysis-preview", args=[analysis.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["id"], str(failed_preview.id))
+        self.assertEqual(payload["status"], PreviewRun.Status.FAILED)
+        self.assertEqual(PreviewRun.objects.filter(analysis=analysis).count(), 1)
+        self.assertFalse(ExecutionJob.objects.filter(kind=ExecutionJob.Kind.PREVIEW).exists())
 
     def test_workspace_viewer_cannot_start_preview(self):
         viewer, _workspace, analysis, _artifact = self._build_workspace_analysis_for_viewer(
@@ -1959,6 +2021,48 @@ class PreviewRunnerApiTests(TestCase):
         self.assertEqual(session.project_name, "demo-app")
         self.assertEqual(session.metadata["generation_profile"], "production")
         mock_schedule.assert_called_once()
+
+    @override_settings(
+        ROOT_URLCONF="config.runner_urls",
+        AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
+        AUTODOCKER_ASYNC_MODE="inline",
+    )
+    @patch("core.runner_api.views.schedule_preview_runner_session")
+    def test_runner_create_preview_reuses_existing_session_without_rescheduling(self, mock_schedule):
+        PreviewRunnerSession.objects.create(
+            preview_id=self.preview_id,
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/original.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            status=PreviewRunnerSession.Status.STARTING,
+        )
+
+        response = self.client.post(
+            "/previews",
+            data=json.dumps(
+                {
+                    "preview_id": self.preview_id,
+                    "analysis_id": self.analysis_id,
+                    "project_name": "demo-app",
+                    "bundle_url": "https://storage.example/bundles/other.zip",
+                    "bundle_sha256": "b" * 64,
+                    "requested_ttl_seconds": 1200,
+                }
+            ),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer preview-token",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertEqual(payload["preview_id"], self.preview_id)
+        self.assertEqual(payload["status"], PreviewRunnerSession.Status.STARTING)
+        self.assertEqual(PreviewRunnerSession.objects.filter(preview_id=self.preview_id).count(), 1)
+        session = PreviewRunnerSession.objects.get(preview_id=self.preview_id)
+        self.assertEqual(session.bundle_url, "https://storage.example/bundles/original.zip")
+        mock_schedule.assert_not_called()
 
     @override_settings(
         ROOT_URLCONF="config.runner_urls",

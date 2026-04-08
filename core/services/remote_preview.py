@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlparse
 from core.models import PreviewRun
 from core.services.ingestion import cleanup_workspace
 from core.services.preview_bundle import PreviewBundleService
-from core.services.preview_runner import PreviewRunnerClient
+from core.services.preview_runner import PreviewRunnerClient, PreviewRunnerError
 
 
 class RemotePreviewService:
@@ -76,8 +76,22 @@ class RemotePreviewService:
         return preview_run
 
     def stop(self, preview_run: PreviewRun) -> PreviewRun:
-        payload = PreviewRunnerClient().stop_preview(str(preview_run.id))
-        self._apply_runner_payload(preview_run, payload, logs=preview_run.logs)
+        try:
+            payload = PreviewRunnerClient().stop_preview(str(preview_run.id))
+            self._apply_runner_payload(preview_run, payload, logs=preview_run.logs)
+        except PreviewRunnerError as exc:
+            detail = str(exc)
+            if "No PreviewRunnerSession matches the given query." not in detail:
+                raise
+            preview_run.status = PreviewRun.Status.STOPPED
+            preview_run.finished_at = timezone.now()
+            preview_run.logs = "\n".join(
+                part
+                for part in [preview_run.logs.strip(), "La runner session ya no existía; se marcó la preview como detenida localmente."]
+                if part
+            )
+            preview_run.save(update_fields=["status", "finished_at", "logs", "updated_at"])
+            return preview_run
         if preview_run.status != PreviewRun.Status.FAILED:
             preview_run.status = PreviewRun.Status.STOPPED
             if not preview_run.finished_at:

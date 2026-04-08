@@ -6,6 +6,7 @@ import zipfile
 
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -285,6 +286,8 @@ class AnalysisGitHubPrApiView(AuthenticatedApiView):
 
 
 class AnalysisPreviewApiView(AuthenticatedApiView):
+    CAPACITY_FAILURE_RETRY_WINDOW_SECONDS = 30
+
     def post(self, request, analysis_id):
         capability = preview_runtime_capability()
         if not capability["enabled"]:
@@ -304,8 +307,26 @@ class AnalysisPreviewApiView(AuthenticatedApiView):
         ).order_by("-created_at").first()
         if active_preview:
             return Response(PreviewRunSerializer(active_preview).data)
+        recent_capacity_failure = (
+            analysis.preview_runs.filter(status=PreviewRun.Status.FAILED)
+            .order_by("-created_at")
+            .first()
+        )
+        if self._is_recent_capacity_failure(recent_capacity_failure):
+            return Response(PreviewRunSerializer(recent_capacity_failure).data)
         preview_run = schedule_preview(analysis, request.user)
         return Response(PreviewRunSerializer(preview_run).data, status=status.HTTP_202_ACCEPTED)
+
+    def _is_recent_capacity_failure(self, preview_run: PreviewRun | None) -> bool:
+        if preview_run is None:
+            return False
+        if preview_run.command != "remote_runner:create_preview":
+            return False
+        logs = (preview_run.logs or "").lower()
+        if "límite de previews activas" not in logs:
+            return False
+        age_seconds = (timezone.now() - preview_run.updated_at).total_seconds()
+        return age_seconds <= self.CAPACITY_FAILURE_RETRY_WINDOW_SECONDS
 
 
 class PreviewDetailApiView(AuthenticatedApiView):

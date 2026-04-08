@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shlex
+import time
 from pathlib import Path
+from urllib import error, request
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -57,7 +59,9 @@ class PreviewPublicationService:
             encoding="utf-8",
         )
         self._reload()
-        return {primary_service_name: [preview_public_url(preview_run.id)]}
+        public_url = preview_public_url(preview_run.id)
+        self._wait_until_public_url_is_ready(public_url)
+        return {primary_service_name: [public_url]}
 
     def unpublish(self, preview_run) -> None:
         if not self.enabled():
@@ -107,3 +111,26 @@ class PreviewPublicationService:
         )
         command = configured_command or f"caddy reload --config {config_path}"
         run_command(shlex.split(command), Path.cwd(), timeout=60)
+
+    def _wait_until_public_url_is_ready(self, public_url: str) -> None:
+        if not public_url:
+            return
+        timeout_seconds = int(getattr(settings, "AUTODOCKER_PREVIEW_HTTP_READY_TIMEOUT_SECONDS", 75))
+        deadline = time.monotonic() + max(1, timeout_seconds)
+        while time.monotonic() < deadline:
+            if self._public_url_is_ready(public_url):
+                return
+            time.sleep(2)
+        raise RuntimeError(
+            "La URL pública de la preview no quedó accesible dentro del timeout configurado."
+        )
+
+    def _public_url_is_ready(self, public_url: str) -> bool:
+        req = request.Request(public_url, method="GET")
+        try:
+            with request.urlopen(req, timeout=5) as response:
+                return 200 <= getattr(response, "status", 200) < 500
+        except error.HTTPError as exc:
+            return 200 <= exc.code < 500
+        except Exception:
+            return False
