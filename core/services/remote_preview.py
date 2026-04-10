@@ -70,8 +70,8 @@ class RemotePreviewService:
 
     def refresh_logs(self, preview_run: PreviewRun) -> PreviewRun:
         client = PreviewRunnerClient()
-        payload = client.get_preview(str(preview_run.id))
         logs_payload = client.get_logs(str(preview_run.id))
+        payload = client.get_preview(str(preview_run.id))
         self._apply_runner_payload(preview_run, payload, logs=logs_payload.get("logs", preview_run.logs))
         return preview_run
 

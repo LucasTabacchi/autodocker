@@ -1089,6 +1089,70 @@ class RemotePreviewServiceTests(SimpleTestCase):
         )
 
 
+class RemotePreviewServiceRefreshTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="remote-preview-user",
+            password="test-pass-123",
+        )
+        self.analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="demo-app",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            repository_url="https://github.com/acme/demo-app",
+            status=ProjectAnalysis.Status.READY,
+        )
+
+    @patch("core.services.remote_preview.PreviewRunnerClient")
+    def test_refresh_logs_uses_latest_runner_status_after_log_refresh(self, mock_client_cls):
+        preview_run = PreviewRun.objects.create(
+            owner=self.user,
+            analysis=self.analysis,
+            status=PreviewRun.Status.RUNNING,
+            command="remote_runner:create_preview",
+        )
+        current_payload = {
+            "status": "starting",
+            "runtime_kind": "",
+            "access_url": "",
+            "ports": {},
+            "resource_names": [],
+        }
+
+        mock_client = Mock()
+        mock_client_cls.return_value = mock_client
+        mock_client.get_preview.side_effect = lambda _preview_id: dict(current_payload)
+
+        def fake_get_logs(_preview_id):
+            current_payload.update(
+                {
+                    "status": "ready",
+                    "runtime_kind": "compose",
+                    "access_url": "https://prv-demo.previews.example.com",
+                    "ports": {"web": ["https://prv-demo.previews.example.com"]},
+                    "resource_names": ["web"],
+                }
+            )
+            return {"logs": "runner ready"}
+
+        mock_client.get_logs.side_effect = fake_get_logs
+
+        RemotePreviewService().refresh_logs(preview_run)
+
+        preview_run.refresh_from_db()
+        self.assertEqual(preview_run.status, PreviewRun.Status.READY)
+        self.assertEqual(preview_run.runtime_kind, PreviewRun.RuntimeKind.COMPOSE)
+        self.assertEqual(
+            preview_run.access_url,
+            "https://prv-demo.previews.example.com",
+        )
+        self.assertEqual(
+            preview_run.ports,
+            {"web": ["https://prv-demo.previews.example.com"]},
+        )
+        self.assertEqual(preview_run.logs, "runner ready")
+
+
 class LocalPreviewSmokeServiceTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
