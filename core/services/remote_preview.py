@@ -28,12 +28,14 @@ class RemotePreviewService:
         preview_run.started_at = timezone.now()
         preview_run.finished_at = None
         preview_run.command = "remote_runner:create_preview"
+        preview_run.logs = "Requesting preview runner session..."
         preview_run.save(
             update_fields=[
                 "status",
                 "started_at",
                 "finished_at",
                 "command",
+                "logs",
                 "updated_at",
             ]
         )

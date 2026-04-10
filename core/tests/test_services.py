@@ -1624,6 +1624,63 @@ class PreviewRunnerSessionServiceTests(TestCase):
     preview_id = "11111111-1111-4111-8111-111111111111"
     analysis_id = "22222222-2222-4222-8222-222222222222"
 
+    @patch("core.services.preview_runner_sessions.PreviewService.start_from_workspace")
+    def test_start_sets_runtime_progress_before_booting_compose_preview(self, mock_start_from_workspace):
+        session = PreviewRunnerSession.objects.create(
+            preview_id=self.preview_id,
+            analysis_id=self.analysis_id,
+            project_name="demo-app",
+            bundle_url="https://storage.example/bundles/preview.zip",
+            bundle_sha256="a" * 64,
+            requested_ttl_seconds=1800,
+            metadata={
+                "components": [{"name": "web"}],
+                "services": [],
+            },
+            status=PreviewRunnerSession.Status.QUEUED,
+        )
+
+        def fake_extract_bundle(_bundle_bytes, source_root):
+            (source_root / "docker-compose.yml").write_text(
+                "services:\n  web:\n    image: nginx:alpine\n",
+                encoding="utf-8",
+            )
+
+        def fake_start(target_session, _analysis_like, _source_root):
+            self.assertEqual(target_session.runtime_kind, PreviewRunnerSession.RuntimeKind.COMPOSE)
+            self.assertIn("Starting compose preview", target_session.logs)
+            target_session.status = PreviewRunnerSession.Status.READY
+            target_session.access_url = "https://prv-demo.previews.example.com"
+            target_session.ports = {"web": ["https://prv-demo.previews.example.com"]}
+            target_session.save(
+                update_fields=["status", "access_url", "ports", "updated_at"]
+            )
+            return target_session
+
+        mock_start_from_workspace.side_effect = fake_start
+
+        with patch.object(
+            PreviewRunnerSessionService,
+            "_download_bundle",
+            return_value=b"bundle-bytes",
+        ), patch.object(
+            PreviewRunnerSessionService,
+            "_verify_sha256",
+        ), patch.object(
+            PreviewRunnerSessionService,
+            "_extract_bundle",
+            side_effect=fake_extract_bundle,
+        ):
+            PreviewRunnerSessionService().start(session)
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, PreviewRunnerSession.Status.READY)
+        self.assertEqual(session.runtime_kind, PreviewRunnerSession.RuntimeKind.COMPOSE)
+        self.assertEqual(
+            session.access_url,
+            "https://prv-demo.previews.example.com",
+        )
+
     def test_start_returns_failed_session_when_keep_workspaces_is_enabled(self):
         session = PreviewRunnerSession.objects.create(
             preview_id=self.preview_id,

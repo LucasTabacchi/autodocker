@@ -45,6 +45,7 @@ class PreviewRunnerSessionService:
                 requested_ttl_seconds=validated_data["requested_ttl_seconds"],
                 metadata=validated_data.get("metadata") or {},
                 status=PreviewRunnerSession.Status.STARTING,
+                logs="Preview runner session reserved. Waiting for workspace preparation.",
                 expires_at=timezone.now()
                 + timedelta(seconds=self._ttl_seconds_from_requested(validated_data["requested_ttl_seconds"])),
             )
@@ -68,6 +69,7 @@ class PreviewRunnerSessionService:
         session.workspace_root = str(workspace_root)
         session.workspace_path = str(source_root)
         session.expires_at = timezone.now() + timedelta(seconds=self._ttl_seconds(session))
+        session.logs = "Downloading preview bundle..."
         session.save(
             update_fields=[
                 "status",
@@ -76,6 +78,7 @@ class PreviewRunnerSessionService:
                 "workspace_root",
                 "workspace_path",
                 "expires_at",
+                "logs",
                 "metadata",
                 "updated_at",
             ]
@@ -85,6 +88,17 @@ class PreviewRunnerSessionService:
             bundle_bytes = self._download_bundle(session.bundle_url)
             self._verify_sha256(bundle_bytes, session.bundle_sha256)
             self._extract_bundle(bundle_bytes, source_root)
+            session.runtime_kind = (
+                PreviewRunnerSession.RuntimeKind.COMPOSE
+                if (source_root / "docker-compose.yml").exists()
+                else PreviewRunnerSession.RuntimeKind.CONTAINER
+            )
+            session.logs = (
+                "Starting compose preview runtime..."
+                if session.runtime_kind == PreviewRunnerSession.RuntimeKind.COMPOSE
+                else "Starting container preview runtime..."
+            )
+            session.save(update_fields=["runtime_kind", "logs", "updated_at"])
             analysis_like = SimpleNamespace(
                 analysis_payload={
                     "components": list(session.metadata.get("components", [])),
