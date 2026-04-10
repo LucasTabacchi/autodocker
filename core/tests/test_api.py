@@ -2160,8 +2160,9 @@ class PreviewRunnerApiTests(TestCase):
         ROOT_URLCONF="config.runner_urls",
         AUTODOCKER_PREVIEW_RUNNER_TOKEN="preview-token",
     )
+    @patch("core.runner_api.views.PreviewRunnerSessionService.reconcile")
     @patch("core.runner_api.views.PreviewRunnerSessionService.refresh_logs")
-    def test_runner_logs_endpoint_refreshes_session(self, mock_refresh_logs):
+    def test_runner_logs_endpoint_refreshes_session(self, mock_refresh_logs, mock_reconcile):
         session = PreviewRunnerSession.objects.create(
             preview_id=self.preview_id,
             analysis_id=self.analysis_id,
@@ -2190,6 +2191,7 @@ class PreviewRunnerApiTests(TestCase):
         self.assertEqual(payload["preview_id"], self.preview_id)
         self.assertEqual(payload["logs"], "runner logs")
         mock_refresh_logs.assert_called_once_with(session)
+        mock_reconcile.assert_not_called()
 
     @override_settings(
         ROOT_URLCONF="config.runner_urls",

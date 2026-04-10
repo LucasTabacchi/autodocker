@@ -67,7 +67,6 @@ class PreviewRunnerSessionLogsApiView(PreviewRunnerAuthenticatedApiView):
     def get(self, request, preview_id):
         session = get_object_or_404(PreviewRunnerSession, preview_id=preview_id)
         service = PreviewRunnerSessionService()
-        service.reconcile()
         service.refresh_logs(session)
         session.refresh_from_db()
         return Response(
