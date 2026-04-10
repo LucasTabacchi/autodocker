@@ -750,6 +750,7 @@
             validation: analysis.latest_validation_job && analysis.latest_validation_job.id,
             github: analysis.latest_github_pr_job && analysis.latest_github_pr_job.id,
             preview: analysis.active_preview && analysis.active_preview.id,
+            latestPreview: analysis.latest_preview && analysis.latest_preview.id,
             workspace: analysis.workspace && analysis.workspace.id,
             security: analysis.security_report,
             healthchecks: analysis.healthcheck_report,
@@ -771,7 +772,7 @@
             renderJob("validation", analysis.latest_validation_job);
             renderJob("github", analysis.latest_github_pr_job);
             renderProfile(analysis);
-            renderPreview(analysis.active_preview);
+            renderPreview(analysis.active_preview || analysis.latest_preview || null);
             renderSecurityReport(analysis.security_report);
             renderHealthchecks(analysis.healthcheck_report);
             renderCicd(analysis.cicd_report);
@@ -833,12 +834,19 @@
         renderJob("github", analysis.latest_github_pr_job);
         renderProfile(analysis);
         if (previewUiAvailable) {
-            renderPreview(analysis.active_preview);
+            renderPreview(analysis.active_preview || analysis.latest_preview || null);
         }
         if (isReady && !analysis.latest_validation_job && validationCapability && !validationCapability.enabled) {
             elements.validationSummary.textContent = validationCapability.reason;
         }
-        if (previewUiAvailable && isReady && !analysis.active_preview && previewCapability && !previewCapability.enabled) {
+        if (
+            previewUiAvailable &&
+            isReady &&
+            !analysis.active_preview &&
+            !analysis.latest_preview &&
+            previewCapability &&
+            !previewCapability.enabled
+        ) {
             elements.previewSummary.textContent = previewCapability.reason;
         }
         renderSecurityReport(analysis.security_report);

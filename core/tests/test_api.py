@@ -475,6 +475,31 @@ class DashboardSerializationPerformanceTests(TestCase):
         self.assertEqual(payload["latest_validation_job"]["kind"], ExecutionJob.Kind.VALIDATION)
         self.assertEqual(payload["latest_github_pr_job"]["kind"], ExecutionJob.Kind.GITHUB_PR)
         self.assertEqual(payload["active_preview"]["status"], PreviewRun.Status.READY)
+        self.assertEqual(payload["latest_preview"]["status"], PreviewRun.Status.READY)
+
+    def test_project_analysis_serializer_keeps_latest_terminal_preview_visible(self):
+        analysis = ProjectAnalysis.objects.create(
+            owner=self.user,
+            project_name="terminal-preview-analysis",
+            source_type=ProjectAnalysis.SourceType.GIT,
+            generation_profile=ProjectAnalysis.GenerationProfile.PRODUCTION,
+            repository_url="https://github.com/acme/terminal-preview-analysis",
+            status=ProjectAnalysis.Status.READY,
+        )
+        PreviewRun.objects.create(
+            owner=self.user,
+            analysis=analysis,
+            status=PreviewRun.Status.FAILED,
+            runtime_kind=PreviewRun.RuntimeKind.COMPOSE,
+            logs="compose service exited with code 1",
+        )
+        prefetched = ProjectAnalysis.objects.with_related().get(pk=analysis.pk)
+
+        payload = ProjectAnalysisSerializer(prefetched, context={"request": self.request}).data
+        self.assertIsNone(payload["active_preview"])
+        self.assertEqual(payload["latest_preview"]["status"], PreviewRun.Status.FAILED)
+        self.assertEqual(payload["latest_preview"]["runtime_kind"], PreviewRun.RuntimeKind.COMPOSE)
+        self.assertEqual(payload["latest_preview"]["logs"], "compose service exited with code 1")
 
     def test_workspace_serializer_uses_prefetched_relations_without_extra_queries(self):
         workspace = Workspace.objects.create(

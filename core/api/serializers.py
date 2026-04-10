@@ -273,6 +273,7 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
     latest_validation_job = serializers.SerializerMethodField()
     latest_github_pr_job = serializers.SerializerMethodField()
     active_preview = serializers.SerializerMethodField()
+    latest_preview = serializers.SerializerMethodField()
     workspace = serializers.SerializerMethodField()
     runtime_capabilities = serializers.SerializerMethodField()
 
@@ -319,6 +320,7 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             "latest_validation_job",
             "latest_github_pr_job",
             "active_preview",
+            "latest_preview",
             "runtime_capabilities",
         )
 
@@ -365,6 +367,12 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             ).order_by("-created_at").first()
         return PreviewRunSerializer(preview).data if preview else None
 
+    def get_latest_preview(self, obj: ProjectAnalysis):
+        preview = self._latest_prefetched_preview(obj)
+        if preview is None:
+            preview = obj.preview_runs.order_by("-created_at").first()
+        return PreviewRunSerializer(preview).data if preview else None
+
     def get_runtime_capabilities(self, obj: ProjectAnalysis):
         return {
             "validation": validation_runtime_capability(),
@@ -393,6 +401,12 @@ class ProjectAnalysisSerializer(serializers.ModelSerializer):
             if preview.status in active_statuses:
                 return preview
         return None
+
+    def _latest_prefetched_preview(self, obj: ProjectAnalysis):
+        previews = getattr(obj, "_prefetched_objects_cache", {}).get("preview_runs")
+        if previews is None:
+            return None
+        return previews[0] if previews else None
 
 
 class DashboardHistoryAnalysisSerializer(serializers.ModelSerializer):
