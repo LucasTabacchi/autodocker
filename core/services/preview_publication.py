@@ -116,19 +116,20 @@ class PreviewPublicationService:
         if not public_url:
             return
         timeout_seconds = int(getattr(settings, "AUTODOCKER_PREVIEW_HTTP_READY_TIMEOUT_SECONDS", 75))
+        request_timeout = max(15, min(timeout_seconds, 30))
         deadline = time.monotonic() + max(1, timeout_seconds)
         while time.monotonic() < deadline:
-            if self._public_url_is_ready(public_url):
+            if self._public_url_is_ready(public_url, timeout=request_timeout):
                 return
             time.sleep(2)
         raise RuntimeError(
             "La URL pública de la preview no quedó accesible dentro del timeout configurado."
         )
 
-    def _public_url_is_ready(self, public_url: str) -> bool:
+    def _public_url_is_ready(self, public_url: str, *, timeout: int = 5) -> bool:
         req = request.Request(public_url, method="GET")
         try:
-            with request.urlopen(req, timeout=5) as response:
+            with request.urlopen(req, timeout=timeout) as response:
                 return 200 <= getattr(response, "status", 200) < 500
         except error.HTTPError as exc:
             return 200 <= exc.code < 500

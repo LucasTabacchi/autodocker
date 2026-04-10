@@ -1246,6 +1246,27 @@ class PrepareLocalPreviewSmokeCommandTests(TestCase):
     AUTODOCKER_PREVIEW_CADDY_CONFIG_PATH="/tmp/Caddyfile",
 )
 class PreviewPublicationServiceTests(SimpleTestCase):
+    def test_public_url_probe_uses_call_timeout_suitable_for_tls_provisioning(self):
+        service = PreviewPublicationService()
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with patch("core.services.preview_publication.request.urlopen", return_value=Response()) as mock_urlopen:
+            ready = service._public_url_is_ready(
+                "https://prv-111111111111.previews.example.com",
+                timeout=30,
+            )
+
+        self.assertTrue(ready)
+        self.assertEqual(mock_urlopen.call_args.kwargs["timeout"], 30)
+
     def test_publish_writes_caddy_route_and_returns_public_url(self):
         preview_run = SimpleNamespace(id="11111111-1111-4111-8111-111111111111")
         service_urls = {"web": ["http://127.0.0.1:41000"]}
