@@ -499,6 +499,4 @@ python manage.py test
 - evitá mezclar refactors no relacionados con fixes funcionales
 - documentá nuevas variables de entorno en `.env.prod.example` y en este README
 
-## Licencia
 
-Actualmente el repositorio no incluye un archivo `LICENSE`, así que no hay una licencia pública definida todavía. Si vas a distribuir el proyecto o aceptar contribuciones externas de forma sostenida, conviene agregar una licencia explícita y actualizar este README.
