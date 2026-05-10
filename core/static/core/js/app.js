@@ -241,7 +241,6 @@
         renderIncomingInvitations(bootstrap.incoming_invitations || []);
         const recentAnalyses = bootstrap.recent_analyses || [];
         renderHistory(recentAnalyses);
-        ensureSelectedAnalysis(recentAnalyses);
     }
 
     function reportInitDuration(source) {
@@ -622,10 +621,14 @@
             : "";
         const analyses = await requestJson(`/api/analyses/${query}`);
         renderHistory(analyses);
-        if (state.analysis && state.analysis.workspace?.id !== state.currentWorkspaceId) {
+        const selectedAnalysisStillVisible =
+            state.analysis && analyses.some((analysis) => analysis.id === state.analysis.id);
+        if (
+            state.analysis &&
+            (state.analysis.workspace?.id !== state.currentWorkspaceId || !selectedAnalysisStillVisible)
+        ) {
             clearCurrentAnalysis();
         }
-        await ensureSelectedAnalysis(analyses);
     }
 
     async function ensureSelectedAnalysis(analyses) {

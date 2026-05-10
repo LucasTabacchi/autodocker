@@ -409,6 +409,12 @@ class DashboardAuthTests(TestCase):
         self.assertNotIn("core_executionjob", sql)
         self.assertNotIn("core_previewrun", sql)
 
+    def test_dashboard_does_not_auto_select_saved_run_on_initial_load(self):
+        dashboard_js = (project_settings.BASE_DIR / "core/static/core/js/app.js").read_text()
+
+        self.assertNotIn("ensureSelectedAnalysis(recentAnalyses)", dashboard_js)
+        self.assertNotIn("await ensureSelectedAnalysis(analyses);", dashboard_js)
+
 
 class DashboardSerializationPerformanceTests(TestCase):
     def setUp(self):
